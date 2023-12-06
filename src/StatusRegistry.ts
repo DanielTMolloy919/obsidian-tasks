@@ -1,12 +1,13 @@
 import { Status } from './Status';
 import { StatusConfiguration, StatusType } from './StatusConfiguration';
+import { htmlEncodeCharacter, htmlEncodeString } from './lib/HTMLCharacterEntities';
 
 /**
  * Tracks all the registered statuses a task can have.
  *
  * There are two ways of using this class.
  * - In 'production' code, that is in the actual plugin code that is released,
- *   call `StatusRegistry.getInstance()` to obtain the single global instance.
+ *   call `StatusRegistry.getInstance()` - {@link getInstance} - to obtain the single global instance.
  *   Any changes to the statuses in that instance are reflected everywhere throughout
  *   the plugin.
  *   For example, the code to toggle task statuses use the global instance.
@@ -33,6 +34,19 @@ export class StatusRegistry {
      */
     public constructor() {
         this.addDefaultStatusTypes();
+    }
+
+    /**
+     * Reset this instance to contain only the given status list, in the supplied order.
+     *
+     * Duplicate status symbols are ignored.
+     * @param statuses
+     */
+    public set(statuses: StatusConfiguration[] | Status[]) {
+        this.clearStatuses();
+        statuses.forEach((status) => {
+            this.add(status);
+        });
     }
 
     /**
@@ -218,7 +232,10 @@ export class StatusRegistry {
             // And add it to our local registry, to prevent duplicates.
             newStatusRegistry.add(newStatus);
         });
-        return namedUniqueStatuses;
+
+        return namedUniqueStatuses.sort((status1, status2) => {
+            return status1.symbol.localeCompare(status2.symbol, undefined, { numeric: true });
+        });
     }
 
     private static copyStatusWithNewName(s: Status, newName: string) {
@@ -272,5 +289,72 @@ export class StatusRegistry {
         defaultStatuses.forEach((status) => {
             this.add(status);
         });
+    }
+
+    /**
+     * Create a Mermaid diagram from the statuses in this registry.
+     *
+     * The text can be pasted in to an Obsidian note to visualise the transitions between
+     * statuses.
+     *
+     * Note: Any of the 'next status symbols' that are not in the registry are ignored, and invisible.
+     *
+     * @param {boolean} includeDetails - whether to include the status symbols and types in the diagram. Defaults to false.
+     */
+    public mermaidDiagram(includeDetails = false) {
+        const uniqueStatuses = this.registeredStatuses;
+
+        const language = 'mermaid';
+
+        const nodes: string[] = [];
+        const edges: string[] = [];
+        uniqueStatuses.forEach((status, index) => {
+            const label = this.getMermaidNodeLabel(status, includeDetails);
+            nodes.push(`${index + 1}${label}`);
+
+            // Check the next status:
+            const nextStatus = this.getNextStatus(status);
+            const nextStatusIndex = uniqueStatuses.findIndex((status) => status.symbol === nextStatus.symbol);
+            const nextStatusIsKnown = nextStatusIndex !== -1;
+            const nextStatusIsNotInternal = nextStatus.type !== StatusType.EMPTY;
+
+            if (nextStatusIsKnown && nextStatusIsNotInternal) {
+                edges.push(`${index + 1} --> ${nextStatusIndex + 1}`);
+            }
+        });
+
+        return `
+\`\`\`${language}
+flowchart LR
+
+classDef TODO        stroke:#f33,stroke-width:3px;
+classDef DONE        stroke:#0c0,stroke-width:3px;
+classDef IN_PROGRESS stroke:#fa0,stroke-width:3px;
+classDef CANCELLED   stroke:#ddd,stroke-width:3px;
+classDef NON_TASK    stroke:#99e,stroke-width:3px;
+
+${nodes.join('\n')}
+${edges.join('\n')}
+
+linkStyle default stroke:gray
+\`\`\`
+`;
+    }
+
+    private getMermaidNodeLabel(status: Status, includeDetails: boolean) {
+        const statusName = htmlEncodeString(status.name);
+        const statusType = status.type;
+        if (includeDetails) {
+            const statusSymbol = htmlEncodeCharacter(status.symbol);
+            const statusNextStatusSymbol = htmlEncodeCharacter(status.nextStatusSymbol);
+
+            const transitionText = `[${statusSymbol}] -> [${statusNextStatusSymbol}]`;
+            const statusNameText = `'${statusName}'`;
+            const statusTypeText = `(${statusType})`;
+
+            return `["${statusNameText}<br>${transitionText}<br>${statusTypeText}"]:::${statusType}`;
+        } else {
+            return `["${statusName}"]:::${statusType}`;
+        }
     }
 }

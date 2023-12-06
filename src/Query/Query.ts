@@ -5,6 +5,7 @@ import type { Task } from '../Task';
 import type { IQuery } from '../IQuery';
 import { getSettings } from '../Config/Settings';
 import { errorMessageForException } from '../lib/ExceptionTools';
+import { logging } from '../lib/logging';
 import { Sort } from './Sort';
 import type { Sorter } from './Sorter';
 import { TaskGroups } from './TaskGroups';
@@ -12,6 +13,8 @@ import * as FilterParser from './FilterParser';
 import type { Grouper } from './Grouper';
 import type { Filter } from './Filter/Filter';
 import { QueryResult } from './QueryResult';
+import { scan } from './Scanner';
+import { SearchInfo } from './SearchInfo';
 
 export class Query implements IQuery {
     /** Note: source is the raw source, before expanding any placeholders */
@@ -28,60 +31,67 @@ export class Query implements IQuery {
     private _ignoreGlobalQuery: boolean = false;
 
     private readonly hideOptionsRegexp =
-        /^(hide|show) (task count|backlink|priority|created date|start date|scheduled date|done date|due date|recurrence rule|edit button|urgency|tags|depends on|id)/;
-    private readonly shortModeRegexp = /^short/;
-    private readonly explainQueryRegexp = /^explain/;
-    private readonly ignoreGlobalQueryRegexp = /^ignore global query/;
+        /^(hide|show) (task count|backlink|priority|created date|start date|scheduled date|done date|due date|recurrence rule|edit button|postpone button|urgency|tags|depends on|id)/i;
+    private readonly shortModeRegexp = /^short/i;
+    private readonly explainQueryRegexp = /^explain/i;
+    private readonly ignoreGlobalQueryRegexp = /^ignore global query/i;
 
-    private readonly limitRegexp = /^limit (groups )?(to )?(\d+)( tasks?)?/;
+    logger = logging.getLogger('tasks.Query');
+    // Used internally to uniquely log each query execution in the console.
+    private _queryId: string = '';
+
+    private readonly limitRegexp = /^limit (groups )?(to )?(\d+)( tasks?)?/i;
 
     private readonly commentRegexp = /^#.*/;
 
     constructor(source: string, path: string | undefined = undefined) {
+        this._queryId = this.generateQueryId(10);
+
         this.source = source;
         this.filePath = path;
 
-        source
-            .split('\n')
-            .map((rawLine: string) => rawLine.trim())
-            .forEach((rawLine: string) => {
-                const line = this.expandPlaceholders(rawLine, path);
-                if (this.error !== undefined) {
-                    // There was an error expanding placeholders.
-                    return;
-                }
+        this.debug(`Creating query: ${this.formatQueryForLogging()}`);
 
-                switch (true) {
-                    case line === '':
-                        break;
-                    case this.shortModeRegexp.test(line):
-                        this._layoutOptions.shortMode = true;
-                        break;
-                    case this.explainQueryRegexp.test(line):
-                        this._layoutOptions.explainQuery = true;
-                        break;
-                    case this.ignoreGlobalQueryRegexp.test(line):
-                        this._ignoreGlobalQuery = true;
-                        break;
-                    case this.limitRegexp.test(line):
-                        this.parseLimit(line);
-                        break;
-                    case this.parseSortBy(line):
-                        break;
-                    case this.parseGroupBy(line):
-                        break;
-                    case this.hideOptionsRegexp.test(line):
-                        this.parseHideOptions(line);
-                        break;
-                    case this.commentRegexp.test(line):
-                        // Comment lines are ignored
-                        break;
-                    case this.parseFilter(line):
-                        break;
-                    default:
-                        this.setError('do not understand query', line);
-                }
-            });
+        scan(source).forEach((rawLine: string) => {
+            const line = this.expandPlaceholders(rawLine, path);
+            if (this.error !== undefined) {
+                // There was an error expanding placeholders.
+                return;
+            }
+
+            switch (true) {
+                case this.shortModeRegexp.test(line):
+                    this._layoutOptions.shortMode = true;
+                    break;
+                case this.explainQueryRegexp.test(line):
+                    this._layoutOptions.explainQuery = true;
+                    break;
+                case this.ignoreGlobalQueryRegexp.test(line):
+                    this._ignoreGlobalQuery = true;
+                    break;
+                case this.limitRegexp.test(line):
+                    this.parseLimit(line);
+                    break;
+                case this.parseSortBy(line):
+                    break;
+                case this.parseGroupBy(line):
+                    break;
+                case this.hideOptionsRegexp.test(line):
+                    this.parseHideOptions(line);
+                    break;
+                case this.commentRegexp.test(line):
+                    // Comment lines are ignored
+                    break;
+                case this.parseFilter(line):
+                    break;
+                default:
+                    this.setError('do not understand query', line);
+            }
+        });
+    }
+
+    private formatQueryForLogging() {
+        return `[${this.source.split('\n').join(' ; ')}]`;
     }
 
     private expandPlaceholders(source: string, path: string | undefined) {
@@ -211,6 +221,17 @@ ${source}`;
         return this._filters;
     }
 
+    /**
+     * Add a new filter to this Query.
+     *
+     * At the time of writing, it is intended to allow tests to create filters
+     * programatically, for things that can not yet be done via 'filter by function'.
+     * @param filter
+     */
+    public addFilter(filter: Filter) {
+        this._filters.push(filter);
+    }
+
     public get sorting() {
         return this._sorting;
     }
@@ -236,17 +257,19 @@ Problem line: "${line}"`;
     }
 
     public applyQueryToTasks(tasks: Task[]): QueryResult {
-        const allTasks = tasks;
+        this.debug(`Executing query: ${this.formatQueryForLogging()}`);
+
+        const searchInfo = new SearchInfo(this.filePath, tasks);
         try {
             this.filters.forEach((filter) => {
-                tasks = tasks.filter((task) => filter.filterFunction(task, allTasks));
+                tasks = tasks.filter((task) => filter.filterFunction(task, searchInfo));
             });
 
             const { debugSettings } = getSettings();
             const tasksSorted = debugSettings.ignoreSortInstructions ? tasks : Sort.by(this.sorting, tasks);
             const tasksSortedLimited = tasksSorted.slice(0, this.limit);
 
-            const taskGroups = new TaskGroups(this.grouping, tasksSortedLimited);
+            const taskGroups = new TaskGroups(this.grouping, tasksSortedLimited, searchInfo);
 
             if (this._taskGroupLimit !== undefined) {
                 taskGroups.applyTaskLimit(this._taskGroupLimit);
@@ -262,8 +285,8 @@ Problem line: "${line}"`;
     private parseHideOptions(line: string): void {
         const hideOptionsMatch = line.match(this.hideOptionsRegexp);
         if (hideOptionsMatch !== null) {
-            const hide = hideOptionsMatch[1] === 'hide';
-            const option = hideOptionsMatch[2];
+            const hide = hideOptionsMatch[1].toLowerCase() === 'hide';
+            const option = hideOptionsMatch[2].toLowerCase();
 
             switch (option) {
                 case 'task count':
@@ -271,6 +294,9 @@ Problem line: "${line}"`;
                     break;
                 case 'backlink':
                     this._layoutOptions.hideBacklinks = hide;
+                    break;
+                case 'postpone button':
+                    this._layoutOptions.hidePostponeButton = hide;
                     break;
                 case 'priority':
                     this._layoutOptions.hidePriority = hide;
@@ -367,5 +393,25 @@ Problem line: "${line}"`;
             return true;
         }
         return false;
+    }
+
+    /**
+     * Creates a unique ID for correlation of console logging.
+     *
+     * @private
+     * @param {number} length
+     * @return {*}  {string}
+     * @memberof Query
+     */
+    private generateQueryId(length: number): string {
+        const chars = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz1234567890';
+        const randomArray = Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]);
+
+        const randomString = randomArray.join('');
+        return randomString;
+    }
+
+    public debug(message: string, objects?: any): void {
+        this.logger.debugWithId(this._queryId, `"${this.filePath}": ${message}`, objects);
     }
 }

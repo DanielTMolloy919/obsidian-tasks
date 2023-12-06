@@ -40,6 +40,11 @@ describe('status', () => {
         expect(filter).toMatchTaskWithStatus(new StatusConfiguration('!', 'Todo', 'x', true, StatusType.TODO)); // 'not done' type.
         expect(filter).not.toMatchTaskWithStatus(new StatusConfiguration('^', 'Non', 'x', true, StatusType.NON_TASK));
     });
+
+    it('should honour original case, when explaining simple filters', () => {
+        const filter = new StatusField().createFilterOrErrorMessage('NOT done');
+        expect(filter).toHaveExplanation('NOT done');
+    });
 });
 
 describe('sorting by status', () => {
@@ -96,10 +101,11 @@ describe('grouping by status', () => {
         ['- [!] a', ['Done']],
     ])('task "%s" should have groups: %s', (taskLine: string, groups: string[]) => {
         // Arrange
-        const grouper = new StatusField().createNormalGrouper().grouper;
+        const grouper = new StatusField().createNormalGrouper();
 
         // Assert
-        expect(grouper(fromLine({ line: taskLine }))).toEqual(groups);
+        const tasks = [fromLine({ line: taskLine })];
+        expect({ grouper, tasks }).groupHeadingsToBe(groups);
     });
 
     it('should sort groups for StatusField', () => {

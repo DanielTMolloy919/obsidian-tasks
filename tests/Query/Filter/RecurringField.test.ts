@@ -46,6 +46,11 @@ describe('recurring', () => {
         testRecurringFilter(filter, recurring, false);
         testRecurringFilter(filter, invalid, true);
     });
+
+    it('should honour original case, when explaining simple filters', () => {
+        const filter = new RecurringField().createFilterOrErrorMessage('is NOT recurring');
+        expect(filter).toHaveExplanation('is NOT recurring');
+    });
 });
 
 describe('sorting by recurring', () => {
@@ -96,10 +101,11 @@ describe('grouping by recurring', () => {
         ['- [ ] a 🔁 every Sunday', ['Recurring']],
     ])('task "%s" should have groups: %s', (taskLine: string, groups: string[]) => {
         // Arrange
-        const grouper = new RecurringField().createNormalGrouper().grouper;
+        const grouper = new RecurringField().createNormalGrouper();
 
         // Assert
-        expect(grouper(fromLine({ line: taskLine }))).toEqual(groups);
+        const tasks = [fromLine({ line: taskLine })];
+        expect({ grouper, tasks }).groupHeadingsToBe(groups);
     });
 
     it('should sort groups for RecurringField', () => {
