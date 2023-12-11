@@ -1,4 +1,4 @@
-import type { Moment, unitOfTime } from 'moment';
+import moment, { type Moment, type unitOfTime } from 'moment';
 import { Task } from '../Task';
 import { TasksDate } from './TasksDate';
 
@@ -23,11 +23,7 @@ export function getDateFieldToPostpone(task: Task): HappensDate | null {
         return 'scheduledDate';
     }
 
-    if (task.startDate) {
-        return 'startDate';
-    }
-
-    return null;
+    return 'startDate';
 }
 
 export function createPostponedTask(
@@ -36,7 +32,7 @@ export function createPostponedTask(
     timeUnit: unitOfTime.DurationConstructor,
     amount: number,
 ) {
-    const dateToUpdate = task[dateTypeToUpdate] as Moment;
+    const dateToUpdate = (task[dateTypeToUpdate] as Moment) || moment();
     const postponedDate = new TasksDate(dateToUpdate).postpone(timeUnit, amount);
     const newTasks = new Task({ ...task, [dateTypeToUpdate]: postponedDate });
     return { postponedDate, newTasks };

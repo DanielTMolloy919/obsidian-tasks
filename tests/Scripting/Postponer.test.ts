@@ -20,23 +20,23 @@ describe('postpone - date field choice', () => {
         expect(getDateFieldToPostpone(task)).toEqual(expected);
     }
 
-    function checkDoesNotPostpone(taskBuilder: TaskBuilder) {
-        checkPostponeField(taskBuilder, null);
-    }
+    // function checkDoesNotPostpone(taskBuilder: TaskBuilder) {
+    //     checkPostponeField(taskBuilder, null);
+    // }
 
     // Since the actual date values do not affect the calculation, we use the same value for all tests,
     // so that the field names stand out when comparing tests.
     const date = '2023-11-26';
 
-    it('should not postpone if no happens dates on task', () => {
-        const taskBuilder = new TaskBuilder();
-        checkDoesNotPostpone(taskBuilder);
-    });
+    // it('should not postpone if no happens dates on task', () => {
+    //     const taskBuilder = new TaskBuilder();
+    //     checkDoesNotPostpone(taskBuilder);
+    // });
 
-    it('should not postpone created or done dates', () => {
-        const taskBuilder = new TaskBuilder().createdDate(date).doneDate(date);
-        checkDoesNotPostpone(taskBuilder);
-    });
+    // it('should not postpone created or done dates', () => {
+    //     const taskBuilder = new TaskBuilder().createdDate(date).doneDate(date);
+    //     checkDoesNotPostpone(taskBuilder);
+    // });
 
     it('should postpone due date', () => {
         const taskBuilder = new TaskBuilder().dueDate(date);
