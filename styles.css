@@ -292,14 +292,14 @@ ul.contains-task-list .task-list-item-checkbox {
 
 /* Dependency Styles */
 
-.chip-container {
+.task-dependencies-container {
     padding-bottom: 4px;
     padding-top: 4px;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
-.chip {
+.task-dependency {
     display: inline-flex;
     background-color: var(--interactive-normal);
     box-shadow: var(--input-shadow);
@@ -307,7 +307,7 @@ ul.contains-task-list .task-list-item-checkbox {
     padding: 6px 8px 6px 12px;
 }
 
-.chip-name {
+.task-dependency-name {
     font-size: 14px;
     max-width: 160px;
     overflow: hidden;
@@ -315,7 +315,7 @@ ul.contains-task-list .task-list-item-checkbox {
     text-overflow: ellipsis;
 }
 
-.chip-close {
+.task-dependency-delete {
     padding: 3px;
     border-radius: 50%;
     margin-left: 6px;
@@ -325,7 +325,7 @@ ul.contains-task-list .task-list-item-checkbox {
     background-color: var(--background-primary) !important;
 }
 
-.suggested-tasks {
+.task-dependency-dropdown {
     list-style: none;
     position: absolute;
     top: 0;
@@ -342,7 +342,7 @@ ul.contains-task-list .task-list-item-checkbox {
     overflow-y: auto;
 }
 
-.suggested-tasks li {
+.task-dependency-dropdown li {
     padding: 5px;
     margin: 2px;
     border-radius: 6px;
@@ -350,20 +350,20 @@ ul.contains-task-list .task-list-item-checkbox {
     display: flex;
     justify-content: space-between
 }
-.suggested-tasks li .dependency-name {
+.task-dependency-dropdown li .dependency-name {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.suggested-tasks li .dependency-name-shared {
+.task-dependency-dropdown li .dependency-name-shared {
     width: calc(60%);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.suggested-tasks li .dependency-location {
+.task-dependency-dropdown li .dependency-path {
     width: calc(40%);
     overflow: hidden;
     white-space: nowrap;
@@ -373,22 +373,8 @@ ul.contains-task-list .task-list-item-checkbox {
     color: var(--italic-color)
 }
 
-.suggested-tasks li.selected {
+.task-dependency-dropdown li.selected {
     background-color: var(--text-selection);
-}
-
-.blocking-tooltip {
-    display: none;
-    width: max-content;
-    position: absolute;
-    top: 0;
-    left: 0;
-    background: #222;
-    color: white;
-    font-weight: bold;
-    padding: 5px;
-    border-radius: 4px;
-    font-size: 90%;
 }
 
 
