@@ -10,7 +10,7 @@
     import { TasksDate } from '../Scripting/TasksDate';
     import { addDependencyToParent, ensureTaskHasId, generateUniqueId, removeDependency } from "../TaskDependency";
     import { replaceTaskWithTasks } from "../File";
-    import type {EditableTask} from "./EditableTask";
+    import type { EditableTask } from "./EditableTask";
     import Dependency from "./Dependency.svelte";
 
     // These exported variables are passed in as props by TaskModal.onOpen():
@@ -591,24 +591,20 @@
                 />
             </div>
 
-            {#if allTasks.length > 0}
+            {#if allTasks.length > 0 && onMountComplete}
                 <!-- --------------------------------------------------------------------------- -->
                 <!--  Blocked By Tasks  -->
                 <!-- --------------------------------------------------------------------------- -->
                 <label for="start">Blocked B<span class="accesskey">y</span></label>
-                {#if onMountComplete}
-                    <Dependency type="blockedBy" task={task} editableTask={editableTask} allTasks={allTasks}
-                                _onDescriptionKeyDown={_onDescriptionKeyDown} accesskey={accesskey} />
-                {/if}
+                <Dependency type="blockedBy" task={task} editableTask={editableTask} allTasks={allTasks}
+                            _onDescriptionKeyDown={_onDescriptionKeyDown} accesskey={accesskey} />
 
                 <!-- --------------------------------------------------------------------------- -->
                 <!--  Blocking Tasks  -->
                 <!-- --------------------------------------------------------------------------- -->
                 <label for="start" class="accesskey-first">Blocking</label>
-                {#if onMountComplete}
-                    <Dependency type="blocking" task={task} editableTask={editableTask} allTasks={allTasks}
-                                _onDescriptionKeyDown={_onDescriptionKeyDown} accesskey={accesskey} />
-                {/if}
+                <Dependency type="blocking" task={task} editableTask={editableTask} allTasks={allTasks}
+                            _onDescriptionKeyDown={_onDescriptionKeyDown} accesskey={accesskey} />
             {:else}
                 <div><i>Blocking and blocked by fields are disabled when vault tasks is empty</i></div>
             {/if}
