@@ -56,6 +56,17 @@ The postpone option looks at the first of these Task fields, and will edit the f
 - Tasks with any invalid dates at all (including Created and Done dates) also don't show the Postpone button.
 - You can use the `hide postpone button` [[Layout]] instruction to hide the Postpone button from your Task query results.
 
+### Overriding postpone button behaviour
+
+If the above default behaviour doesn't meet your needs, you can manually override what date the postpone button will modify for any query.
+Use the `postpone (start|scheduled|due) date` instruction to set what date the postpone button defers.
+
+Note, the postpone button will show next to every task in the query results, even those with no date set.
+This is because the plugin assumes the date is today if it is unset. When postponed, the date will then be set as tomorrow.
+
+> [!released]
+> Overriding postpone button behaviour was introduced in Tasks X.Y.Z
+
 ### Availability
 
 This facility is currently only available in Tasks query search results.
