@@ -12,13 +12,8 @@ export function shouldShowPostponeButton(task: Task) {
         }
     }
 
-    // require a valid happens date to postpone
-    const hasAValidHappensDate = task.happensDates.some((date) => {
-        return !!date?.isValid();
-    });
-
     // only postpone not done tasks
-    return !task.isDone && hasAValidHappensDate;
+    return !task.isDone;
 }
 
 export type HappensDate = keyof Pick<Task, 'startDate' | 'scheduledDate' | 'dueDate'>;
@@ -38,11 +33,7 @@ export function getDateFieldToPostpone(task: Task): HappensDate | null {
         return 'scheduledDate';
     }
 
-    if (task.startDate) {
-        return 'startDate';
-    }
-
-    return null;
+    return 'startDate';
 }
 
 /**
@@ -60,7 +51,7 @@ export function createPostponedTask(
     timeUnit: unitOfTime.DurationConstructor,
     amount: number,
 ) {
-    const dateToPostpone = task[dateFieldToPostpone];
+    const dateToPostpone = task[dateFieldToPostpone] || window.moment();
     return createPostponedTaskFromDate(dateToPostpone, task, dateFieldToPostpone, timeUnit, amount);
 }
 
@@ -125,7 +116,7 @@ function capitalizeFirstLetter(word: string) {
  */
 export function postponeMenuItemTitle(task: Task, amount: number, timeUnit: unitOfTime.DurationConstructor) {
     const updatedDateType = getDateFieldToPostpone(task)!;
-    const dateToUpdate = task[updatedDateType] as Moment;
+    const dateToUpdate = (task[updatedDateType] as Moment) || window.moment();
     return postponeMenuItemTitleFromDate(updatedDateType, dateToUpdate, amount, timeUnit);
 }
 

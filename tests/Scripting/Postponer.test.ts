@@ -41,22 +41,18 @@ describe('postpone - date field choice', () => {
         expect(getDateFieldToPostpone(task)).toEqual(expected);
     }
 
-    function checkDoesNotPostpone(taskBuilder: TaskBuilder) {
-        checkPostponeField(taskBuilder, null);
-    }
-
     // Since the actual date values do not affect the calculation, we use the same value for all tests,
     // so that the field names stand out when comparing tests.
     const date = '2023-11-26';
 
-    it('should not postpone if no happens dates on task', () => {
+    it('should postpone start date when no happens set', () => {
         const taskBuilder = new TaskBuilder();
-        checkDoesNotPostpone(taskBuilder);
+        checkPostponeField(taskBuilder, 'startDate');
     });
 
     it('should not postpone created or done dates', () => {
         const taskBuilder = new TaskBuilder().createdDate(date).doneDate(date);
-        checkDoesNotPostpone(taskBuilder);
+        checkPostponeField(taskBuilder, 'startDate');
     });
 
     it('should postpone due date', () => {
@@ -110,22 +106,22 @@ describe('postpone - whether to show button', () => {
         checkPostponeButtonVisibility(StatusType.DONE, false);
     });
 
-    it('should not show button for a task with no dates', () => {
+    it('should show button for a task with no dates', () => {
         const task = new TaskBuilder().build();
 
-        expect(shouldShowPostponeButton(task)).toEqual(false);
+        expect(shouldShowPostponeButton(task)).toEqual(true);
     });
 
-    it('should not show button for a task with a created date only', () => {
+    it('should show button for a task with a created date only', () => {
         const task = new TaskBuilder().createdDate('2023-11-29').build();
 
-        expect(shouldShowPostponeButton(task)).toEqual(false);
+        expect(shouldShowPostponeButton(task)).toEqual(true);
     });
 
-    it('should not show button for a task with a done date only', () => {
+    it('should show button for a task with a done date only', () => {
         const task = new TaskBuilder().doneDate('2023-11-30').build();
 
-        expect(shouldShowPostponeButton(task)).toEqual(false);
+        expect(shouldShowPostponeButton(task)).toEqual(true);
     });
 
     it('should show button for a task with a start date only', () => {
@@ -238,6 +234,11 @@ describe('postpone - new task creation', () => {
             expect(postponedTask.scheduledDateIsInferred).toEqual(false);
         }
     }
+
+    it('should postpone a task with no dates to starts tomorrow', () => {
+        const task = new TaskBuilder().build();
+        testPostponedTaskAndDate(task, 'startDate', '2023-12-04', createPostponedTask);
+    });
 
     it('should postpone an overdue task to today', () => {
         const task = new TaskBuilder().dueDate('2023-11-01').build();
