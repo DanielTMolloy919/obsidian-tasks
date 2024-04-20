@@ -73,6 +73,12 @@ function createPostponedTaskFromDate(
     timeUnit: unitOfTime.DurationConstructor,
     amount: number,
 ) {
+    dateToPostpone = dateToPostpone || window.moment().startOf('day');
+
+    // if (dateToPostpone && dateToPostpone.isSame(window.moment(), 'day')) {
+    //     amount += 1;
+    // }
+
     const postponedDate = new TasksDate(dateToPostpone).postpone(timeUnit, amount);
     const postponedTask = DateFallback.removeInferredStatusIfNeeded(task, [
         new Task({
