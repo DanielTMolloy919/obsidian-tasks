@@ -75,7 +75,10 @@ function createPostponedTaskFromDate(
 ) {
     dateToPostpone = dateToPostpone || window.moment().startOf('day');
 
-    if (dateToPostpone && dateToPostpone.isBefore(window.moment())) {
+    const after5pm = window.moment().hour() >= 17;
+    const dateBeforeNow = dateToPostpone && dateToPostpone.isBefore(window.moment());
+
+    if (dateBeforeNow && after5pm) {
         amount += 1;
     }
 
