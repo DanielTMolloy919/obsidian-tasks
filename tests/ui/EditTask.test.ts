@@ -2,21 +2,25 @@
  * @jest-environment jsdom
  */
 import { type RenderResult, fireEvent, render } from '@testing-library/svelte';
-import { describe, expect, it } from '@jest/globals';
 import moment from 'moment';
 import { taskFromLine } from '../../src/Commands/CreateOrEditTaskParser';
-import type { Task } from '../../src/Task/Task';
-import EditTask from '../../src/ui/EditTask.svelte';
-import { Status } from '../../src/Statuses/Status';
-import { DateFallback } from '../../src/Task/DateFallback';
 import { GlobalFilter } from '../../src/Config/GlobalFilter';
 import { resetSettings, updateSettings } from '../../src/Config/Settings';
+import { DateFallback } from '../../src/DateTime/DateFallback';
+import { StatusRegistry } from '../../src/Statuses/StatusRegistry';
+import type { Task } from '../../src/Task/Task';
+import EditTask from '../../src/ui/EditTask.svelte';
+import { verifyWithFileExtension } from '../TestingTools/ApprovalTestHelpers';
 import { verifyAllCombinations3Async } from '../TestingTools/CombinationApprovalsAsync';
+import { prettifyHTML } from '../TestingTools/HTMLHelpers';
 import { TaskBuilder } from '../TestingTools/TaskBuilder';
+import {
+    getAndCheckApplyButton,
+    getAndCheckRenderedDescriptionElement,
+    getAndCheckRenderedElement,
+} from './RenderingTestHelpers';
 
 window.moment = moment;
-const statusOptions: Status[] = [Status.DONE, Status.TODO];
-
 /**
  * Construct an onSubmit function for editing the given task, and when Apply is clicked,
  * returning the edit task(s) converted to a string.
@@ -39,26 +43,19 @@ function constructSerialisingOnSubmit(task: Task) {
 }
 
 function renderAndCheckModal(task: Task, onSubmit: (updatedTasks: Task[]) => void, allTasks = [task]) {
-    const result: RenderResult<EditTask> = render(EditTask, { task, statusOptions, onSubmit, allTasks });
+    const result: RenderResult<EditTask> = render(EditTask, {
+        task,
+        statusOptions: StatusRegistry.getInstance().registeredStatuses,
+        onSubmit,
+        allTasks,
+    });
     const { container } = result;
     expect(() => container).toBeTruthy();
     return { result, container };
 }
 
-function getAndCheckRenderedElement(container: HTMLElement, elementId: string) {
-    const renderedDescription = container.ownerDocument.getElementById(elementId) as HTMLInputElement;
-    expect(() => renderedDescription).toBeTruthy();
-    return renderedDescription;
-}
-
-function getAndCheckRenderedDescriptionElement(container: HTMLElement): HTMLInputElement {
-    return getAndCheckRenderedElement(container, 'description');
-}
-
-function getAndCheckApplyButton(result: RenderResult<EditTask>): HTMLButtonElement {
-    const submit = result.getByText('Apply') as HTMLButtonElement;
-    expect(submit).toBeTruthy();
-    return submit;
+async function editInputElement(inputElement: HTMLInputElement, newValue: string) {
+    await fireEvent.input(inputElement, { target: { value: newValue } });
 }
 
 async function editInputElementAndSubmit(
@@ -67,7 +64,7 @@ async function editInputElementAndSubmit(
     submit: HTMLButtonElement,
     waitForClose: Promise<string>,
 ): Promise<string> {
-    await fireEvent.input(inputElement, { target: { value: newValue } });
+    await editInputElement(inputElement, newValue);
     submit.click();
     return await waitForClose;
 }
@@ -123,10 +120,58 @@ async function editFieldAndSave(line: string, elementId: string, newValue: strin
     const { waitForClose, onSubmit } = constructSerialisingOnSubmit(task);
     const { result, container } = renderAndCheckModal(task, onSubmit);
 
-    const description = getAndCheckRenderedElement(container, elementId);
+    const description = getAndCheckRenderedElement<HTMLInputElement>(container, elementId);
     const submit = getAndCheckApplyButton(result);
 
     return await editInputElementAndSubmit(description, newValue, submit, waitForClose);
+}
+
+async function renderTaskModalAndChangeStatus(line: string, newStatusSymbol: string) {
+    const task = taskFromLine({ line: line, path: '' });
+    const { waitForClose, onSubmit } = constructSerialisingOnSubmit(task);
+    const { result, container } = renderAndCheckModal(task, onSubmit);
+
+    const statusSelector = getAndCheckRenderedElement<HTMLSelectElement>(container, 'status-type');
+    const submit = getAndCheckApplyButton(result);
+
+    await fireEvent.change(statusSelector, {
+        target: { value: newStatusSymbol },
+    });
+    return { waitForClose, container, submit };
+}
+
+/**
+ * Simulate the behaviour of:
+ *   - clicking on a line in Obsidian,
+ *   - opening the Edit task modal,
+ *   - editing a field,
+ *   - changing the status,
+ *   - and clicking Apply.
+ * @param line
+ * @param elementId - specifying the field to edit
+ * @param newValue - the new value for the field
+ * @param newStatusSymbol - new Status symbol value
+ */
+async function renderChangeDateAndStatus(line: string, elementId: string, newValue: string, newStatusSymbol: string) {
+    const task = taskFromLine({ line: line, path: '' });
+    const { waitForClose, onSubmit } = constructSerialisingOnSubmit(task);
+    const { result, container } = renderAndCheckModal(task, onSubmit);
+
+    const inputElement = getAndCheckRenderedElement<HTMLInputElement>(container, elementId);
+    await editInputElement(inputElement, newValue);
+
+    const statusSelector = getAndCheckRenderedElement<HTMLSelectElement>(container, 'status-type');
+    await fireEvent.change(statusSelector, {
+        target: { value: newStatusSymbol },
+    });
+
+    const submit = getAndCheckApplyButton(result);
+    return { waitForClose, container, submit };
+}
+
+function getElementValue(container: HTMLElement, elementId: string) {
+    const element = getAndCheckRenderedElement<HTMLInputElement>(container, elementId);
+    return element.value;
 }
 
 describe('Task rendering', () => {
@@ -140,7 +185,7 @@ describe('Task rendering', () => {
         const onSubmit = (_: Task[]): void => {};
         const { container } = renderAndCheckModal(task, onSubmit);
 
-        const inputElement = getAndCheckRenderedElement(container, elementId);
+        const inputElement = getAndCheckRenderedElement<HTMLInputElement>(container, elementId);
         expect(inputElement!.value).toEqual(expectedElementValue);
     }
 
@@ -285,7 +330,228 @@ describe('Task editing', () => {
         );
     });
 
+    describe('Status editing', () => {
+        const today = '2024-02-29';
+        beforeAll(() => {
+            jest.useFakeTimers();
+            jest.setSystemTime(new Date(today));
+        });
+
+        afterAll(() => {
+            jest.useRealTimers();
+        });
+
+        afterEach(() => {
+            resetSettings();
+        });
+
+        it('should change status to Done and add doneDate', async () => {
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] expecting done date to be added',
+                'x',
+            );
+            expect(getElementValue(container, 'done')).toEqual(today);
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot('"- [x] expecting done date to be added ✅ 2024-02-29"');
+        });
+
+        it('should change status to Done and keep doneDate', async () => {
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] expecting done date to be kept ✅ 2024-09-19',
+                'x',
+            );
+            expect(getElementValue(container, 'done')).toEqual('2024-09-19');
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot('"- [x] expecting done date to be kept ✅ 2024-09-19"');
+        });
+
+        it('should change status to Todo and remove doneDate', async () => {
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [x] expecting done date to be removed ✅ 2024-02-29',
+                ' ',
+            );
+            expect(getElementValue(container, 'done')).toEqual('');
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot('"- [ ] expecting done date to be removed"');
+        });
+
+        it('should change status to Cancelled and add cancelledDate', async () => {
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] expecting cancelled date to be added',
+                '-',
+            );
+            expect(getElementValue(container, 'cancelled')).toEqual(today);
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot(
+                '"- [-] expecting cancelled date to be added ❌ 2024-02-29"',
+            );
+        });
+
+        it('should change status to Cancelled and keep cancelledDate', async () => {
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] expecting cancelled date to be kept ❌ 2024-09-20',
+                '-',
+            );
+            expect(getElementValue(container, 'cancelled')).toEqual('2024-09-20');
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot(
+                '"- [-] expecting cancelled date to be kept ❌ 2024-09-20"',
+            );
+        });
+
+        it('should change status to Todo and remove cancelledDate', async () => {
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [-] expecting cancelled date to be removed ❌ 2024-02-29',
+                ' ',
+            );
+            expect(getElementValue(container, 'cancelled')).toEqual('');
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot('"- [ ] expecting cancelled date to be removed"');
+        });
+
+        /**
+         * Test opening task modal for a given line, changing a date to a value, changing the status,
+         * clicking Apply, verifying the final line.
+         *
+         * @param line
+         * @param dateElementToChange
+         * @param dateValue
+         * @param newStatusSymbol
+         * @param expectedTaskAfterEdits
+         */
+        async function testDateInputAndStatusChange(
+            line: string,
+            dateElementToChange: string,
+            dateValue: string,
+            newStatusSymbol: string,
+            expectedTaskAfterEdits: string,
+        ) {
+            const { waitForClose, container, submit } = await renderChangeDateAndStatus(
+                line,
+                dateElementToChange,
+                dateValue,
+                newStatusSymbol,
+            );
+
+            expect(getElementValue(container, dateElementToChange)).toEqual(dateValue);
+
+            submit.click();
+            expect(await waitForClose).toEqual(expectedTaskAfterEdits);
+        }
+
+        it.each([
+            [
+                '- [ ] input done date, change status to done and expect the date to be kept',
+                'done',
+                '2024-09-20',
+                'x',
+                '- [x] input done date, change status to done and expect the date to be kept ✅ 2024-09-20',
+            ],
+            [
+                '- [ ] input cancelled date, change status to cancelled and expect the date to be kept',
+                'cancelled',
+                '2024-09-21',
+                '-',
+                // https://github.com/obsidian-tasks-group/obsidian-tasks/issues/3089
+                '- [-] input cancelled date, change status to cancelled and expect the date to be kept ❌ 2024-09-21',
+            ],
+        ])(
+            'for "%s" task, change %s date to %s and status to %s',
+            async (
+                line: string,
+                dateElementToChange: string,
+                dateValue: string,
+                newStatusSymbol: string,
+                expectedTaskAfterEdits: string,
+            ) => {
+                await testDateInputAndStatusChange(
+                    line,
+                    dateElementToChange,
+                    dateValue,
+                    newStatusSymbol,
+                    expectedTaskAfterEdits,
+                );
+            },
+        );
+
+        it('should create new instance of recurring task, with doneDate set to today', async () => {
+            updateSettings({ recurrenceOnNextLine: false });
+            const { waitForClose, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] Recurring 🔁 every day 📅 2024-02-17',
+                'x',
+            );
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot(`
+                "- [ ] Recurring 🔁 every day 📅 2024-02-18
+                - [x] Recurring 🔁 every day 📅 2024-02-17 ✅ 2024-02-29"
+            `);
+        });
+
+        it('should respect user setting for order of new recurring tasks', async () => {
+            updateSettings({ recurrenceOnNextLine: true });
+            const { waitForClose, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] Recurring 🔁 every day 📅 2024-02-17',
+                'x',
+            );
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot(`
+                "- [x] Recurring 🔁 every day 📅 2024-02-17 ✅ 2024-02-29
+                - [ ] Recurring 🔁 every day 📅 2024-02-18"
+            `);
+        });
+
+        it('should create new instance of "when done" recurring task, with doneDate set to today', async () => {
+            updateSettings({ setCreatedDate: true });
+
+            const { waitForClose, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] Recurring 🔁 every day when done 📅 2024-02-17',
+                'x',
+            );
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot(`
+                "- [ ] Recurring 🔁 every day when done ➕ 2024-02-29 📅 2024-03-01
+                - [x] Recurring 🔁 every day when done 📅 2024-02-17 ✅ 2024-02-29"
+            `);
+        });
+
+        it('should calculate the next recurrence date based on the actual done date in the field', async () => {
+            updateSettings({ setCreatedDate: true });
+
+            const { waitForClose, container, submit } = await renderTaskModalAndChangeStatus(
+                '- [ ] Recurring 🔁 every day when done 📅 2024-02-17',
+                'x',
+            );
+
+            const doneField = getAndCheckRenderedElement<HTMLInputElement>(container, 'done');
+            await editInputElement(doneField, '2024-02-23');
+
+            submit.click();
+            expect(await waitForClose).toMatchInlineSnapshot(`
+                "- [ ] Recurring 🔁 every day when done ➕ 2024-02-29 📅 2024-02-24
+                - [x] Recurring 🔁 every day when done 📅 2024-02-17 ✅ 2024-02-23"
+            `);
+        });
+    });
+
     describe('Date editing', () => {
+        beforeEach(() => {
+            jest.useFakeTimers();
+            jest.setSystemTime(new Date('2024-11-27'));
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
         const line = '- [ ] simple';
 
         it('should edit and save cancelled date', async () => {
@@ -310,6 +576,31 @@ describe('Task editing', () => {
 
         it('should edit and save start date', async () => {
             expect(await editFieldAndSave(line, 'start', '2024-01-01')).toEqual('- [ ] simple 🛫 2024-01-01');
+        });
+
+        it('should edit and save start date "today"', async () => {
+            expect(await editFieldAndSave(line, 'start', 'today')).toEqual('- [ ] simple 🛫 2024-11-27');
+        });
+
+        it('should edit and save start date "this week"', async () => {
+            // Confirm understanding that today's date is a Wednesday
+            expect(moment().format('YYYY-MM-DD dddd')).toEqual('2024-11-27 Wednesday');
+
+            // See https://github.com/obsidian-tasks-group/obsidian-tasks/issues/2588
+            // With 'only future dates' being on by default, the selection of a date
+            // earlier than today is unexpected.
+            // This was written with Tasks using "chrono-node": "2.3.9"
+            expect(await editFieldAndSave(line, 'start', 'this week')).toEqual('- [ ] simple 🛫 2024-11-24');
+        });
+    });
+
+    describe('OnCompletion editing', () => {
+        it('should retain any OnCompletion value', async () => {
+            // We cannot yet edit the OnCompletion in the modal.
+            // So for now, just test to ensure that any initial value is retained.
+            expect(await editFieldAndSave('- [ ] description  🏁 delete', 'start', '2024-01-01')).toEqual(
+                '- [ ] description 🏁 delete 🛫 2024-01-01',
+            );
         });
     });
 });
@@ -381,5 +672,33 @@ describe('Exhaustive editing', () => {
             setCreatedDateValues,
             initialTaskLineValues,
         );
+    });
+});
+
+describe('Edit Modal HTML snapshot tests', () => {
+    afterEach(() => {
+        resetSettings();
+    });
+
+    function verifyModalHTML() {
+        // Populate task a valid and an invalid date. Note that the valid date value
+        // is not visible in the HTML output.
+        const task = taskFromLine({ line: '- [ ] absolutely to do 🛫 2024-01-01 ⏳ 2024-02-33', path: '' });
+        const onSubmit = () => {};
+        const allTasks = [task];
+        const { container } = renderAndCheckModal(task, onSubmit, allTasks);
+
+        const prettyHTML = prettifyHTML(container.innerHTML);
+        verifyWithFileExtension(prettyHTML, 'html');
+    }
+
+    it('should match snapshot', () => {
+        updateSettings({ provideAccessKeys: true });
+        verifyModalHTML();
+    });
+
+    it('should match snapshot - without access keys', () => {
+        updateSettings({ provideAccessKeys: false });
+        verifyModalHTML();
     });
 });

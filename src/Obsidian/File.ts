@@ -1,6 +1,7 @@
 import { type ListItemCache, MetadataCache, Notice, TFile, Vault, Workspace } from 'obsidian';
 import { GlobalFilter } from '../Config/GlobalFilter';
 import { type MockListItemCache, type MockTask, saveMockDataForTesting } from '../lib/MockDataCreator';
+import type { ListItem } from '../Task/ListItem';
 import type { Task } from '../Task/Task';
 import { logging } from '../lib/logging';
 import { logEndOfTaskEdit, logStartOfTaskEdit } from '../lib/LogTasksHelper';
@@ -48,8 +49,8 @@ export const replaceTaskWithTasks = async ({
     originalTask,
     newTasks,
 }: {
-    originalTask: Task;
-    newTasks: Task | Task[];
+    originalTask: ListItem;
+    newTasks: ListItem | ListItem[];
 }): Promise<void> => {
     if (vault === undefined || metadataCache === undefined || workspace === undefined) {
         errorAndNotice('Tasks: cannot use File before initializing it.');
@@ -65,7 +66,7 @@ export const replaceTaskWithTasks = async ({
     logStartOfTaskEdit(logger, codeLocation, originalTask);
     logEndOfTaskEdit(logger, codeLocation, newTasks);
 
-    tryRepetitive({
+    await tryRepetitive({
         originalTask,
         newTasks,
         vault,
@@ -75,6 +76,10 @@ export const replaceTaskWithTasks = async ({
     });
 };
 
+/**
+ * @todo Unify this with {@link showError} in EditorSuggestorPopup.ts
+ * @param message
+ */
 function errorAndNotice(message: string) {
     console.error(message);
     new Notice(message, 15000);
@@ -109,8 +114,8 @@ const tryRepetitive = async ({
     workspace,
     previousTries,
 }: {
-    originalTask: Task;
-    newTasks: Task[];
+    originalTask: ListItem;
+    newTasks: ListItem[];
     vault: Vault;
     metadataCache: MetadataCache;
     workspace: Workspace;
@@ -118,7 +123,7 @@ const tryRepetitive = async ({
 }): Promise<void> => {
     const logger = getFileLogger();
     logger.debug(`tryRepetitive after ${previousTries} previous tries`);
-    const retry = () => {
+    const retry = async () => {
         if (previousTries > 10) {
             const message = `Tasks: Could not find the correct task line to update.
 
@@ -142,8 +147,8 @@ Recommendations:
 
         const timeout = Math.min(Math.pow(10, previousTries), 100); // 1, 10, 100, 100, 100, ...
         logger.debug(`timeout = ${timeout}`);
-        setTimeout(() => {
-            tryRepetitive({
+        setTimeout(async () => {
+            await tryRepetitive({
                 originalTask,
                 newTasks,
                 vault,
@@ -159,7 +164,7 @@ Recommendations:
         // Finally, we can insert 1 or more lines over the original task line:
         const updatedFileLines = [
             ...fileLines.slice(0, taskLineNumber),
-            ...newTasks.map((task: Task) => task.toFileLineString()),
+            ...newTasks.map((task: ListItem) => task.toFileLineString()),
             ...fileLines.slice(taskLineNumber + 1), // Only supports single-line tasks.
         ];
 
@@ -167,9 +172,11 @@ Recommendations:
     } catch (e) {
         if (e instanceof WarningWorthRetrying) {
             if (e.message) warnAndNotice(e.message);
-            return retry();
+            await retry();
+            return;
         } else if (e instanceof RetryWithoutWarning) {
-            return retry();
+            await retry();
+            return;
         } else if (e instanceof Error) {
             errorAndNotice(e.message);
         }
@@ -182,7 +189,7 @@ Recommendations:
  * It may throw a WarningWorthRetrying exception in several cases that justify a retry (should be handled by the caller)
  * or an Error exception in case of an unrecoverable error.
  */
-async function getTaskAndFileLines(task: Task, vault: Vault): Promise<[number, TFile, string[]]> {
+async function getTaskAndFileLines(task: ListItem, vault: Vault): Promise<[number, TFile, string[]]> {
     if (metadataCache === undefined) throw new WarningWorthRetrying();
     // Validate our inputs.
     // For permanent failures, return nothing.

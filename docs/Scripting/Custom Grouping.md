@@ -13,6 +13,7 @@ publish: true
 
 - Define your own custom task groups, using JavaScript expressions such as:
   - `group by function task.urgency.toFixed(3)`
+  - See [[#Number property examples]] below for how floating point numbers are treated, if the precision (number of decimal places) is not specified.
 - There are loads of examples in [[Grouping]].
   - Search for `group by function` in that file.
 - Find all the **supported tasks properties** in [[Task Properties]] and [[Quick Reference]].
@@ -136,7 +137,7 @@ group by function task.due.fromNow.groupText
 ```
 
 - Group by the [time from now](https://momentjs.com/docs/#/displaying/fromnow/), for example `8 days ago`, `in 11 hours`.
-- It users an empty string (so no heading) if there is no due date.
+- It uses an empty string (so no heading) if there is no due date.
 - The values `task.due.fromNow.name` and `task.due.fromNow.sortOrder` are also available.
 
 ```javascript
@@ -193,6 +194,15 @@ group by function task.urgency.toFixed(3)
 
 - Show the urgency to 3 decimal places, unlike the built-in "group by urgency" which uses 2.
 
+```javascript
+group by function task.urgency
+```
+
+- Show non-integer urgency values to 5 decimal places, and integer ones to 0 decimal places.
+- Sorting of groups by name has been found to be unreliable with varying numbers of decimal places.
+- So to ensure consistent sorting, Tasks will round non-integer numbers to a fixed 5 decimal places, returning the value as a string.
+- This still sorts consistently even when some of the group's values are integers.
+
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
 ### File property examples
@@ -203,7 +213,7 @@ group by function task.urgency.toFixed(3)
 group by function task.file.folder
 ```
 
-- Same as 'group by folder'.
+- Like 'group by folder', except that it does not escape any Markdown formatting characters in the folder.
 
 ```javascript
 group by function task.file.folder.slice(0, -1).split('/').pop() + '/'

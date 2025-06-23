@@ -2,19 +2,22 @@
  * @jest-environment jsdom
  */
 import moment from 'moment';
+
 import { DebugSettings } from '../../src/Config/DebugSettings';
 import { GlobalFilter } from '../../src/Config/GlobalFilter';
 import { resetSettings, updateSettings } from '../../src/Config/Settings';
 import { QueryLayoutOptions } from '../../src/Layout/QueryLayoutOptions';
 import { TaskLayoutComponent, TaskLayoutOptions, taskLayoutComponents } from '../../src/Layout/TaskLayoutOptions';
-import { DateParser } from '../../src/Query/DateParser';
+import { DateParser } from '../../src/DateTime/DateParser';
 import type { TextRenderer } from '../../src/Renderer/TaskLineRenderer';
 import { TaskLineRenderer } from '../../src/Renderer/TaskLineRenderer';
 import type { Task } from '../../src/Task/Task';
 import { TaskRegularExpressions } from '../../src/Task/TaskRegularExpressions';
 import { verifyWithFileExtension } from '../TestingTools/ApprovalTestHelpers';
+import { prettifyHTML } from '../TestingTools/HTMLHelpers';
 import { TaskBuilder } from '../TestingTools/TaskBuilder';
 import { fromLine } from '../TestingTools/TestHelpers';
+import { mockHTMLRenderer, mockTextRenderer } from './RenderingTestHelpers';
 
 jest.mock('obsidian');
 window.moment = moment;
@@ -43,20 +46,8 @@ async function renderListItem(
         taskLayoutOptions: taskLayoutOptions ?? new TaskLayoutOptions(),
         queryLayoutOptions: queryLayoutOptions ?? new QueryLayoutOptions(),
     });
-    return await taskLineRenderer.renderTaskLine(task, 0);
+    return await taskLineRenderer.renderTaskLine({ task: task, taskIndex: 0, isTaskInQueryFile: true });
 }
-
-const mockTextRenderer = async (text: string, element: HTMLSpanElement, _path: string) => {
-    element.innerText = text;
-};
-
-const mockHTMLRenderer = async (text: string, element: HTMLSpanElement, _path: string) => {
-    // Contrary to the default mockTextRenderer(),
-    // instead of the rendered HTMLSpanElement.innerText,
-    // we need the plain HTML here like in TaskLineRenderer.renderComponentText(),
-    // to ensure that description and tags are retained.
-    element.innerHTML = text;
-};
 
 function getTextSpan(listItem: HTMLElement) {
     return listItem.children[1] as HTMLSpanElement;
@@ -98,7 +89,11 @@ describe('task line rendering - HTML', () => {
             taskLayoutOptions: new TaskLayoutOptions(),
             queryLayoutOptions: new QueryLayoutOptions(),
         });
-        const listItem = await taskLineRenderer.renderTaskLine(new TaskBuilder().build(), 0);
+        const listItem = await taskLineRenderer.renderTaskLine({
+            task: new TaskBuilder().build(),
+            taskIndex: 0,
+            isTaskInQueryFile: true,
+        });
 
         // Just one element
         expect(ulElement.children.length).toEqual(1);
@@ -202,9 +197,10 @@ describe('task line rendering - layout options', () => {
             [
                 'Do exercises #todo #health',
                 ' 🆔 abcdef',
-                ' ⛔️ 123456,abc123',
+                ' ⛔ 123456,abc123',
                 ' 🔼',
                 ' 🔁 every day when done',
+                ' 🏁 delete',
                 ' ➕ 2023-07-01',
                 ' 🛫 2023-07-02',
                 ' ⏳ 2023-07-03',
@@ -222,9 +218,10 @@ describe('task line rendering - layout options', () => {
             [
                 'Do exercises #todo #health',
                 ' 🆔 abcdef',
-                ' ⛔️ 123456,abc123',
+                ' ⛔ 123456,abc123',
                 ' 🔼',
                 ' 🔁 every day when done',
+                ' 🏁 delete',
                 ' ➕ 2023-07-01',
                 ' 🛫 2023-07-02',
                 ' ⏳ 2023-07-03',
@@ -279,7 +276,11 @@ describe('task line rendering - layout options', () => {
     });
 
     it('renders with depends on', async () => {
-        await testLayoutOptions(['Do exercises #todo #health', ' ⛔️ 123456,abc123'], [TaskLayoutComponent.BlockedBy]);
+        await testLayoutOptions(['Do exercises #todo #health', ' ⛔ 123456,abc123'], [TaskLayoutComponent.DependsOn]);
+    });
+
+    it('renders with onCompletion', async () => {
+        await testLayoutOptions(['Do exercises #todo #health', ' 🏁 delete'], [TaskLayoutComponent.OnCompletion]);
     });
 });
 
@@ -357,7 +358,7 @@ describe('task line rendering - classes and data attributes', () => {
 
     it('renders dependency fields with their correct classes', async () => {
         await testComponentClasses('- [ ] Minimal task 🆔 g7317o', 'task-id', '');
-        await testComponentClasses('- [ ] Minimal task ⛔️ ya44g5,hry475', 'task-blockedBy', '');
+        await testComponentClasses('- [ ] Minimal task ⛔ ya44g5,hry475', 'task-dependsOn', '');
     });
 
     it('should render recurrence component with its class and data attribute', async () => {
@@ -518,6 +519,15 @@ describe('task line rendering - classes and data attributes', () => {
 });
 
 describe('Visualise HTML', () => {
+    beforeAll(() => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2023-07-05'));
+    });
+
+    afterAll(() => {
+        jest.useRealTimers();
+    });
+
     async function renderAndVerifyHTML(
         task: Task,
         {
@@ -533,9 +543,9 @@ describe('Visualise HTML', () => {
         const taskAsMarkdown = `<!--
 ${task.toFileLineString()}
 -->\n\n`;
-        const taskAsHTML = listItem.outerHTML.replace(/ data-/g, '\n    data-').replace(/<span/g, '\n        <span');
+        const prettyHTML = prettifyHTML(listItem.outerHTML);
 
-        verifyWithFileExtension(taskAsMarkdown + taskAsHTML, 'html');
+        verifyWithFileExtension(taskAsMarkdown + prettyHTML, 'html');
     }
 
     const fullTask = TaskBuilder.createFullyPopulatedTask();

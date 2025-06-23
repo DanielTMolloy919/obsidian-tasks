@@ -1,4 +1,5 @@
 import { Editor, type EditorPosition, type MarkdownFileInfo, MarkdownView } from 'obsidian';
+import { TasksFile } from '../Scripting/TasksFile';
 import { StatusRegistry } from '../Statuses/StatusRegistry';
 
 import { Task } from '../Task/Task';
@@ -35,7 +36,18 @@ export const toggleDone = (checking: boolean, editor: Editor, view: MarkdownView
     const line = editor.getLine(lineNumber);
 
     const insertion = toggleLine(line, path);
-    editor.setLine(lineNumber, insertion.text);
+
+    const replacementTextIsNonEmpty = insertion.text.length > 0;
+    const taskIsOnLastLine = lineNumber >= editor.lineCount() - 1;
+    if (replacementTextIsNonEmpty || taskIsOnLastLine) {
+        editor.setLine(lineNumber, insertion.text);
+    } else {
+        // The replacement text is empty, and our line was followed by a new line character,
+        // so we delete the line and the new-line, to avoid leaving a blank line in the file.
+        const from = { line: lineNumber, ch: 0 };
+        const to = { line: lineNumber + 1, ch: 0 };
+        editor.replaceRange('', from, to);
+    }
 
     /* Cursor positions are 0-based for both "line" and "ch" offsets.
      * If "ch" offset bigger than the line length, will just continue to next line(s).
@@ -69,12 +81,13 @@ export const toggleLine = (line: string, path: string): EditorInsertion => {
     const task = Task.fromLine({
         // Why are we using Task.fromLine instead of the Cache here?
         line,
-        taskLocation: TaskLocation.fromUnknownPosition(path), // We don't need precise location to toggle it here in the editor.
+        taskLocation: TaskLocation.fromUnknownPosition(new TasksFile(path)), // We don't need precise location to toggle it here in the editor.
         fallbackDate: null, // We don't need this to toggle it here in the editor.
     });
     if (task !== null) {
         const lines = task.toggleWithRecurrenceInUsersOrder().map((t) => t.toFileLineString());
-        return { text: lines.join('\n'), moveTo: { line: lines.length - 1 } };
+        const newLineNumber = lines.length > 0 ? lines.length - 1 : 0;
+        return { text: lines.join('\n'), moveTo: { line: newLineNumber } };
     } else {
         // If the task is null this means that we have one of:
         // 1. a regular checklist item

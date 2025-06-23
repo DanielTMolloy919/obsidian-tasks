@@ -43,7 +43,7 @@ describe('cancelled date', () => {
 describe('explain cancelled date queries', () => {
     beforeAll(() => {
         jest.useFakeTimers();
-        jest.setSystemTime(new Date(2022, 0, 15)); // 2022-01-15
+        jest.setSystemTime(new Date('2022-01-15'));
     });
 
     afterAll(() => {
@@ -117,6 +117,7 @@ describe('grouping by cancelled date', () => {
             '2023-05-30 Tuesday',
             '2023-05-31 Wednesday',
             '2023-06-01 Thursday',
+            '2023-06-02 Friday',
             'No cancelled date',
         ]);
     });

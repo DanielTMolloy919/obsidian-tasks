@@ -1,5 +1,7 @@
 import type { Moment } from 'moment';
 import { TaskLayoutComponent, TaskLayoutOptions } from '../Layout/TaskLayoutOptions';
+import { OnCompletion, parseOnCompletionValue } from '../Task/OnCompletion';
+import { Occurrence } from '../Task/Occurrence';
 import { Recurrence } from '../Task/Recurrence';
 import { Task } from '../Task/Task';
 import { Priority } from '../Task/Priority';
@@ -9,7 +11,6 @@ import type { TaskDetails, TaskSerializer } from '.';
 /* Interface describing the symbols that {@link DefaultTaskSerializer}
  * uses to serialize and deserialize tasks.
  *
- * @export
  * @interface DefaultTaskSerializerSymbols
  */
 export interface DefaultTaskSerializerSymbols {
@@ -29,8 +30,9 @@ export interface DefaultTaskSerializerSymbols {
     readonly doneDateSymbol: string;
     readonly cancelledDateSymbol: string;
     readonly recurrenceSymbol: string;
+    readonly onCompletionSymbol: string;
     readonly idSymbol: string;
-    readonly blockedBySymbol: string;
+    readonly dependsOnSymbol: string;
     readonly TaskFormatRegularExpressions: {
         priorityRegex: RegExp;
         startDateRegex: RegExp;
@@ -40,9 +42,32 @@ export interface DefaultTaskSerializerSymbols {
         doneDateRegex: RegExp;
         cancelledDateRegex: RegExp;
         recurrenceRegex: RegExp;
+        onCompletionRegex: RegExp;
         idRegex: RegExp;
-        blockedByRegex: RegExp;
+        dependsOnRegex: RegExp;
     };
+}
+
+// The allowed characters in a single task id:
+export const taskIdRegex = /[a-zA-Z0-9-_]+/;
+
+// The allowed characters in a comma-separated sequence of task ids:
+export const taskIdSequenceRegex = new RegExp(taskIdRegex.source + '( *, *' + taskIdRegex.source + ' *)*');
+
+function dateFieldRegex(symbols: string) {
+    return fieldRegex(symbols, '(\\d{4}-\\d{2}-\\d{2})');
+}
+
+function fieldRegex(symbols: string, valueRegexString: string) {
+    // \uFE0F? allows an optional Variant Selector 16 on emojis.
+    let source = symbols + '\uFE0F?';
+    if (valueRegexString !== '') {
+        source += ' *' + valueRegexString;
+    }
+    // The regexes end with `$` because they will be matched and
+    // removed from the end until none are left.
+    source += '$';
+    return new RegExp(source, 'u');
 }
 
 /**
@@ -66,21 +91,21 @@ export const DEFAULT_SYMBOLS: DefaultTaskSerializerSymbols = {
     doneDateSymbol: '✅',
     cancelledDateSymbol: '❌',
     recurrenceSymbol: '🔁',
-    blockedBySymbol: '⛔️',
+    onCompletionSymbol: '🏁',
+    dependsOnSymbol: '⛔',
     idSymbol: '🆔',
     TaskFormatRegularExpressions: {
-        // The following regex's end with `$` because they will be matched and
-        // removed from the end until none are left.
-        priorityRegex: /([🔺⏫🔼🔽⏬])$/u,
-        startDateRegex: /🛫 *(\d{4}-\d{2}-\d{2})$/u,
-        createdDateRegex: /➕ *(\d{4}-\d{2}-\d{2})$/u,
-        scheduledDateRegex: /[⏳⌛] *(\d{4}-\d{2}-\d{2})$/u,
-        dueDateRegex: /[📅📆🗓] *(\d{4}-\d{2}-\d{2})$/u,
-        doneDateRegex: /✅ *(\d{4}-\d{2}-\d{2})$/u,
-        cancelledDateRegex: /❌ *(\d{4}-\d{2}-\d{2})$/u,
-        recurrenceRegex: /🔁 ?([a-zA-Z0-9, !]+)$/iu,
-        blockedByRegex: /⛔️ *([a-z0-9]+( *, *[a-z0-9]+ *)*)$/iu,
-        idRegex: /🆔 *([a-z0-9]+)$/iu,
+        priorityRegex: fieldRegex('([🔺⏫🔼🔽⏬])', ''),
+        startDateRegex: dateFieldRegex('🛫'),
+        createdDateRegex: dateFieldRegex('➕'),
+        scheduledDateRegex: dateFieldRegex('[⏳⌛]'),
+        dueDateRegex: dateFieldRegex('[📅📆🗓]'),
+        doneDateRegex: dateFieldRegex('✅'),
+        cancelledDateRegex: dateFieldRegex('❌'),
+        recurrenceRegex: fieldRegex('🔁', '([a-zA-Z0-9, !]+)'),
+        onCompletionRegex: fieldRegex('🏁', '([a-zA-Z]+)'),
+        dependsOnRegex: fieldRegex('⛔', '(' + taskIdSequenceRegex.source + ')'),
+        idRegex: fieldRegex('🆔', '(' + taskIdRegex.source + ')'),
     },
 } as const;
 
@@ -95,6 +120,25 @@ function symbolAndDateValue(shortMode: boolean, symbol: string, date: moment.Mom
     // but doing so would do some wasted date-formatting when in 'short mode',
     // so instead we repeat the check on shortMode value.
     return shortMode ? ' ' + symbol : ` ${symbol} ${date.format(TaskRegularExpressions.dateFormat)}`;
+}
+
+export function allTaskPluginEmojis() {
+    const allEmojis: string[] = [];
+
+    // All the priority emojis:
+    Object.values(DEFAULT_SYMBOLS.prioritySymbols).forEach((value) => {
+        if (value.length > 0) {
+            allEmojis.push(value);
+        }
+    });
+
+    // All the other field emojis:
+    Object.values(DEFAULT_SYMBOLS).forEach((value) => {
+        if (typeof value === 'string') {
+            allEmojis.push(value);
+        }
+    });
+    return allEmojis;
 }
 
 export class DefaultTaskSerializer implements TaskSerializer {
@@ -129,8 +173,9 @@ export class DefaultTaskSerializer implements TaskSerializer {
             doneDateSymbol,
             cancelledDateSymbol,
             recurrenceSymbol,
+            onCompletionSymbol,
             dueDateSymbol,
-            blockedBySymbol,
+            dependsOnSymbol,
             idSymbol,
         } = this.symbols;
 
@@ -170,9 +215,12 @@ export class DefaultTaskSerializer implements TaskSerializer {
             case TaskLayoutComponent.RecurrenceRule:
                 if (!task.recurrence) return '';
                 return symbolAndStringValue(shortMode, recurrenceSymbol, task.recurrence.toText());
-            case TaskLayoutComponent.BlockedBy: {
-                if (task.blockedBy.length === 0) return '';
-                return symbolAndStringValue(shortMode, blockedBySymbol, task.blockedBy.join(','));
+            case TaskLayoutComponent.OnCompletion:
+                if (task.onCompletion === OnCompletion.Ignore) return '';
+                return symbolAndStringValue(shortMode, onCompletionSymbol, task.onCompletion);
+            case TaskLayoutComponent.DependsOn: {
+                if (task.dependsOn.length === 0) return '';
+                return symbolAndStringValue(shortMode, dependsOnSymbol, task.dependsOn.join(','));
             }
             case TaskLayoutComponent.Id:
                 return symbolAndStringValue(shortMode, idSymbol, task.id);
@@ -232,8 +280,9 @@ export class DefaultTaskSerializer implements TaskSerializer {
         let createdDate: Moment | null = null;
         let recurrenceRule: string = '';
         let recurrence: Recurrence | null = null;
+        let onCompletion: OnCompletion = OnCompletion.Ignore;
         let id: string = '';
-        let blockedBy: string[] | [] = [];
+        let dependsOn: string[] | [] = [];
         // Tags that are removed from the end while parsing, but we want to add them back for being part of the description.
         // In the original task description they are possibly mixed with other components
         // (e.g. #tag1 <due date> #tag2), they do not have to all trail all task components,
@@ -304,6 +353,14 @@ export class DefaultTaskSerializer implements TaskSerializer {
                 matched = true;
             }
 
+            const onCompletionMatch = line.match(TaskFormatRegularExpressions.onCompletionRegex);
+            if (onCompletionMatch != null) {
+                line = line.replace(TaskFormatRegularExpressions.onCompletionRegex, '').trim();
+                const inputOnCompletionValue = onCompletionMatch[1];
+                onCompletion = parseOnCompletionValue(inputOnCompletionValue);
+                matched = true;
+            }
+
             // Match tags from the end to allow users to mix the various task components with
             // tags. These tags will be added back to the description below
             const tagsMatch = line.match(TaskRegularExpressions.hashTagsFromEnd);
@@ -323,12 +380,12 @@ export class DefaultTaskSerializer implements TaskSerializer {
                 matched = true;
             }
 
-            const blockedByMatch = line.match(TaskFormatRegularExpressions.blockedByRegex);
+            const dependsOnMatch = line.match(TaskFormatRegularExpressions.dependsOnRegex);
 
-            if (blockedByMatch != null) {
-                line = line.replace(TaskFormatRegularExpressions.blockedByRegex, '').trim();
-                blockedBy = blockedByMatch[1]
-                    .replace(' ', '')
+            if (dependsOnMatch != null) {
+                line = line.replace(TaskFormatRegularExpressions.dependsOnRegex, '').trim();
+                dependsOn = dependsOnMatch[1]
+                    .replace(/ /g, '')
                     .split(',')
                     .filter((item) => item !== '');
                 matched = true;
@@ -341,9 +398,7 @@ export class DefaultTaskSerializer implements TaskSerializer {
         if (recurrenceRule.length > 0) {
             recurrence = Recurrence.fromText({
                 recurrenceRuleText: recurrenceRule,
-                startDate,
-                scheduledDate,
-                dueDate,
+                occurrence: new Occurrence({ startDate, scheduledDate, dueDate }),
             });
         }
         // Add back any trailing tags to the description. We removed them so we can parse the rest of the
@@ -363,8 +418,9 @@ export class DefaultTaskSerializer implements TaskSerializer {
             doneDate,
             cancelledDate,
             recurrence,
+            onCompletion,
             id,
-            blockedBy,
+            dependsOn,
             tags: Task.extractHashtags(line),
         };
     }

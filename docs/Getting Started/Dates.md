@@ -59,10 +59,10 @@ Scheduled dates use an hourglass emoji: ⏳.
 - [ ] take out the trash ⏳ 2021-04-09
 ```
 
-See [[Use Filename as Default Date]] for how to optionally make Tasks use any dates in file names as the scheduled date for all undated tasks in that file.
+See also:
 
-> [!released]
-'Use Filename as Default Date' was introduced in Tasks 1.18.0.
+- [[Use Filename as Default Date]] for how to optionally make Tasks use any dates in file names as the scheduled date for all undated tasks in that file.
+- [[Recurring Tasks#Remove scheduled date on recurrence|Remove scheduled date on recurrence]] for controlling whether new recurring tasks are automatically scheduled.
 
 Related instructions for use in Tasks query blocks:
 
@@ -202,3 +202,24 @@ However, it is possible to search for any tasks with invalid dates in your vault
 
 > [!warning]
 The date values on task lines must be calendar or absolute dates, referring to a specific year, month and day. Text such as `📅 today` is not understood by the Tasks plugin, and will not be found in searches.
+
+## Limitations of task date support
+
+### Date format is not configurable
+
+- The date format on task lines is not yet configurable.
+- The only format recognised is `YYYY-MM-DD`, for example `2024-09-17`.
+- It is not possible to customise the format of date values on task lines.
+- It is also not possible to format dates as links, such as `[[2024-09-17]]`.
+- We are tracking this in [discussion #69](https://github.com/obsidian-tasks-group/obsidian-tasks/discussions/69).
+
+### Dates cannot include times
+
+- It is not yet possible to include times on task lines to indicate when they *should* be acted on.
+- Nor is it possible to record the time when tasks were created, completed or cancelled.
+- We are tracking this in discussions [#607](https://github.com/obsidian-tasks-group/obsidian-tasks/discussions/607) and [#668](https://github.com/obsidian-tasks-group/obsidian-tasks/discussions/668).
+
+### Time-tracking, productivity tracking, pomodoros, notifications and similar out-of-scope
+
+- The following are out-of-scope for the Tasks plugin: time-tracking, productivity tracking, pomodoros, notifications and similar.
+- We recorded this in [discussion #2721](https://github.com/obsidian-tasks-group/obsidian-tasks/discussions/2721).

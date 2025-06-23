@@ -50,6 +50,8 @@ However, any `sort by` instructions in queries take precedence over these defaul
 > To sort the results of a query differently from the default, you must add at least one `sort by` line to the query. The sort instructions you supply will take priority over the appended defaults.
 >
 > Adding `sort by` lines to the [[Global Query]] provides a way override to the default sort order for **all** searches (except those that [[Global Query#Ignoring the global query|ignore the global query]]).
+>
+> You may also find `sort by function task.lineNumber` to be useful to override the default sort order. See [[#Override the Tasks plugin's default sort order]] below.
 
 ## Custom Sorting
 
@@ -73,7 +75,7 @@ For more information, including adding your own customised statuses, see [[Statu
 - `sort by status` (done or todo)
 
 > [!Tip]
-> `sort by status.type` gives a much more useful sort order than `sort by status`. See [[#Status Type#]] below.
+> `sort by status.type` gives a much more useful sort order than `sort by status`. See [[#Status Type]] below.
 
 Since Tasks 6.0.0, **[[Custom Sorting|custom sorting]] by status** is now possible.
 
@@ -160,6 +162,11 @@ sort by function task.status.nextSymbol
 
 ## Sort by Task Dependencies
 
+At a high level, task dependencies define the order in which you want to work on a set of tasks. You can read more about them in [[Task Dependencies]].
+
+> [!released]
+> Task Dependencies were introduced in Tasks 6.1.0.
+
 ### Id
 
 - `sort by id`
@@ -168,21 +175,21 @@ For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - Task Id was introduced in Tasks X.Y.Z.
+> - Task Id was introduced in Tasks 6.1.0.
 
-Since Tasks X.Y.Z, **[[Custom Sorting|custom sorting]] by Id** is now possible, using `task.id`.
+Since Tasks 6.1.0, **[[Custom Sorting|custom sorting]] by Id** is now possible, using `task.id`.
 
-### Blocked By
+### Depends On
 
-There is no built-in instruction to sort by 'Blocked By'.
+There is no built-in instruction to sort by 'Depends On'.
 
 For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - Task Blocked By was introduced in Tasks X.Y.Z.
+> - Task Depends On was introduced in Tasks 6.1.0.
 
-Since Tasks X.Y.Z, **[[Custom Sorting|custom sorting]]  by Blocked By** is now possible, using `task.blockedBy`.
+Since Tasks 6.1.0, **[[Custom Sorting|custom sorting]]  by Depends On** is now possible, using `task.dependsOn`.
 
 ## Sort by Dates in Tasks
 
@@ -499,6 +506,55 @@ sort by function task.originalMarkdown
 
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
+### Line Number
+
+There is no built-in instruction to sort by the task's line number.
+
+Since Tasks 7.16.0, **[[Custom Sorting|custom sorting]] by the task's line number** is now possible, using `task.lineNumber`.
+
+> [!tip]
+> With `task.lineNumber`, the first line in the file is on line number `0` (zero), not `1` (one).
+
+<!-- placeholder to force blank line before included text --><!-- include: CustomSortingExamples.test.other_properties_task.lineNumber_docs.approved.md -->
+
+```javascript
+sort by function task.lineNumber
+```
+
+- Sort by the line number of the task's original line in the MarkDown file.
+- This is useful if you are unhappy with the [[Sorting#default sort order]].
+
+<!-- placeholder to force blank line after included text --><!-- endInclude -->
+
+### Random sorting
+
+> [!released]
+> Random sorting was introduced in Tasks 7.11.0.
+
+This instruction sorts tasks in a random order:
+
+- `sort by random`
+
+The order is random but deterministic, calculated from task's description, and changes each day.
+
+> [!example] Example: Randomly select a few tasks to review
+> If you have a large vault with lots of undated tasks, reviewing them can be tedious: we have found it useful to be able to view a small selection every day.
+>
+> Review your backlog each day:
+>
+> - randomly select up to 10 undated tasks,
+> - then complete, update or delete a few of them!
+>
+> ````text
+> ```tasks
+> not done
+> no happens date
+> limit 10
+>
+> sort by random
+> ```
+> ````
+
 ## Sort by File Properties
 
 ### File Path
@@ -641,7 +697,11 @@ If given, the sort order will be reverse for that property.
 Note that `reverse` will reverse the entire result set.
 For example, when you `sort by done reverse` and your query results contain tasks that do not have a done date, then those tasks without a done date will be listed first.
 
+Refer to [[Grouping#Reversing groups]] to specify the sort order of groups when using the `GROUP BY` clause.
+
 ## Examples
+
+### Sort tasks by due date, from oldest to newest
 
     ```tasks
     not done
@@ -649,15 +709,38 @@ For example, when you `sort by done reverse` and your query results contain task
     sort by due
     ```
 
+### Sort tasks by due date, from newest to oldest
+
     ```tasks
     done
     sort by done reverse
     ```
 
+### Override the Tasks plugin's default sort order
+
+If you are unhappy with the [[#default sort order]], this is one way to override it:
+
+1. sort by the Markdown file's full path,
+2. then sort by the task's line number in that file.
+
+    ```tasks
+    not done
+    sort by path
+    sort by function task.lineNumber
+    ```
+
+Any other sort instructions can be added before these two, such as `sort by priority` or `sort by happens`
+
+### Sort by multiple properties
+
+1. task's status type (Sorted in the order `IN_PROGRESS`, `TODO`, `DONE`, `CANCELLED` then `NON_TASK`),
+2. then the task's description, in reverse alphabetical order
+3. then by the Markdown file's path.
+
     ```tasks
     not done
     due before next monday
-    sort by status
+    sort by status.type
     sort by description reverse
     sort by path
     ```

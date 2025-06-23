@@ -61,18 +61,18 @@ The brackets `[]` and `()` differ in how [Dataview displays them](https://blacks
 > - Separating each field with at least 2 spaces.
 >
 > > [!example]
->   >
->   > ```text
->   >  - [ ] This is a task [priority:: high]  [start:: 2023-04-24]  [due:: 2023-05-01]
->   >  ```
+> >
+> > ```text
+> >  - [ ] This is a task [priority:: high]  [start:: 2023-04-24]  [due:: 2023-05-01]
+> >  ```
 >
 > - Separating each field with commas.
 >
 > > [!example]
->   >
->   > ```text
->   >  - [ ] This is a task [priority:: high], [start:: 2023-04-24], [due:: 2023-05-01]
->   > ```
+> >
+> > ```text
+> >  - [ ] This is a task [priority:: high], [start:: 2023-04-24], [due:: 2023-05-01]
+> > ```
 
 ## Supported dataview fields
 
@@ -131,12 +131,25 @@ For more information, see [[Priority]].
 
 For more information, see [[Recurring Tasks]].
 
+### Dataview Format for OnCompletion
+
+<!-- snippet: DocsSamplesForTaskFormats.test.Serializer_OnCompletion_dataview-snippet.approved.md -->
+```md
+- [ ] #task Keep this task when done
+- [ ] #task Keep this task when done too  [onCompletion:: keep]
+- [ ] #task Remove this task when done  [onCompletion:: delete]
+- [ ] #task Remove completed instance of this recurring task when done  [repeat:: every day]  [onCompletion:: delete]
+```
+<!-- endSnippet -->
+
+For more information, see [[On Completion]].
+
 ### Dataview Format for Dependencies
 
 <!-- snippet: DocsSamplesForTaskFormats.test.Serializer_Dependencies_dataview-snippet.approved.md -->
 ```md
-- [ ] do this first  [id:: dcf64c]
-- [ ] do this after first and some other task  [blockedBy:: dcf64c,0h17ye]
+- [ ] #task do this first  [id:: dcf64c]
+- [ ] #task do this after first and some other task  [dependsOn:: dcf64c,0h17ye]
 ```
 <!-- endSnippet -->
 
@@ -152,7 +165,7 @@ Since Tasks 4.6.1, the Auto-Suggest menu *only* appears between square brackets 
 
 Essential reading:
 
-- [[About Task Formats#Impact of non-default formats on Tasks behaviour]]
+- [[About Task Formats#Impact of non-default task formats on Tasks behaviour]]
 - [[About Task Formats#Limitations of task format support]]
 
 Additional limitations, compared to the Dataview's own parsing of task lines:

@@ -1,4 +1,5 @@
 import { App, Modal } from 'obsidian';
+
 import EditTask from '../ui/EditTask.svelte';
 import type { Task } from '../Task/Task';
 import { StatusRegistry } from '../Statuses/StatusRegistry';
@@ -41,7 +42,12 @@ export class TaskModal extends Modal {
 
         new EditTask({
             target: contentEl,
-            props: { task: this.task, statusOptions: statusOptions, onSubmit: this.onSubmit, allTasks: this.allTasks },
+            props: {
+                task: this.task,
+                statusOptions: statusOptions,
+                onSubmit: this.onSubmit,
+                allTasks: this.allTasks,
+            },
         });
     }
 

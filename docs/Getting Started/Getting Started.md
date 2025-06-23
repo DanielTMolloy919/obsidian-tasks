@@ -11,7 +11,7 @@ The simplest way to create a new task is to create a new checklist item.
 The markdown syntax for checklist items is a list item that starts with spaced brackets:
 
 ```text
-- [ ] take out the trash`
+- [ ] take out the trash
 ```
 
 Now Tasks tracks that you need to take out the trash!
@@ -26,11 +26,15 @@ Now Tasks tracks that you need to take out the trash!
 >
 > + [ ] task starting with a plus sign
 >
-> 1. [ ] a task in a numbered list
+> 1. [ ] a task in a numbered list with a `.` character
+>
+> 2) [ ] a task in a numbered list with a `)` character
 > ```
 
 > [!released]
-> Support for tasks with `+` was introduced in Tasks 4.5.0.
+>
+> - Support for tasks with `+` was introduced in Tasks 4.5.0.
+> - Support for numbered lists with `)` was introduced in Tasks 7.18.5.
 
 To list all open tasks in a markdown file, simply add a [[About Queries|query]] as a tasks code block like so:
 
@@ -118,7 +122,9 @@ We are tracking this in [issue #2061](https://github.com/obsidian-tasks-group/ob
 Tasks can read tasks that are in **numbered lists**.
 
 > [!released]
-Reading tasks inside numbered lists was introduced in Tasks 1.20.0.
+>
+> - Reading tasks inside numbered lists was introduced in Tasks 1.20.0.
+> - Reading tasks inside numbered lists with `)` was introduced in Tasks 7.18.5.
 
 For example:
 
@@ -128,15 +134,29 @@ For example:
 3. [ ] Do following step
 ```
 
+or:
+
+```markdown
+1) [ ] Do first step
+2) [ ] Do next step
+3) [ ] Do following step
+```
+
 Editing and toggling tasks in numbered lists works fine: the original number is preserved.
 
 > [!warning]
 > However, when these tasks are displayed in tasks blocks they are displayed as ordinary bullet list items.
-
-This is because they will usually be displayed in a completely different order than in the original list, often mixed in with tasks from bullet lists. The original numbers in this case just don't make sense.
+>
+> This is because they will usually be displayed in a completely different order than in the original list, often mixed in with tasks from bullet lists. The original numbers in this case just don't make sense.
 
 ### Tasks in Blockquotes and Callouts
 
+<!-- force a blank line --><!-- include: snippet-callout-titles-bug.md -->
+
+> [!Warning] Warning: Obsidian bug in versions 1.6.0 to 1.6.3 has caused some tasks not to be found
+> See [[Missing tasks in callouts with some Obsidian 1.6.x versions]] for how to ==make Obsidian 1.6.5 fix its metadata cache==, in case it was broken by earlier 1.6.x versions.
+
+<!-- force a blank line --><!-- endInclude -->
 Tasks can read tasks that are inside [blockquotes](https://www.markdownguide.org/basic-syntax/#blockquotes-1) or [Obsidian's built-in callouts](https://help.obsidian.md/How+to/Use+callouts).
 
 > [!released]
@@ -166,11 +186,6 @@ We are tracking this in [issue #1989](https://github.com/obsidian-tasks-group/ob
 > Tasks cannot read tasks that are in **Obsidian Canvas cards**.
 
 We are tracking this in [issue #2100](https://github.com/obsidian-tasks-group/obsidian-tasks/issues/2100).
-
-> [!warning]
-> Tasks sometimes prevents checking off/completing tasks in **Obsidian Canvas cards**.
-
-We are tracking this in [issue #2130](https://github.com/obsidian-tasks-group/obsidian-tasks/issues/2130).
 
 ### Tasks in Code Blocks
 
@@ -231,7 +246,10 @@ This means that you can only put **block links** (`^link-name`) and **tags** aft
 
 We are tracking this in [issue #1505](https://github.com/obsidian-tasks-group/obsidian-tasks/issues/1505).
 
-If you are concerned that some values in a task are not being parsed as you intended, perhaps because a task is not being found by Tasks searches, you can view the task in the [[Create or edit Task|‘Create or edit Task’ Modal]].
+If you are concerned that some values in a task are not being parsed as you intended, perhaps because a task is not being found by Tasks searches, you can:
+
+- view an individual task in the [[Create or edit Task|‘Create or edit Task’ Modal]]
+- search for all possible problems: see [[Find tasks with invalid data#Finding unread emojis|Finding unread emojis]].
 
 If there are any **Tasks emojis visible in the Description field**, close the modal and delete or move to the left any unrecognised text.
 

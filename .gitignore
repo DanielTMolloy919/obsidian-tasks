@@ -8,6 +8,7 @@ yarn-error.log
 
 # build
 /main.js
+/styles.css
 *.js.map
 .log
 /generated/
@@ -16,8 +17,17 @@ yarn-error.log
 /data.json
 /.obsidian
 
+# See https://github.com/rscopic/obsidian-vault-nickname
+# This is useful if you have multiple clones of the Tasks plugin,
+# and wish to distinguish between various identically named vaults.
+.vault-nickname
+**/.obsidian/plugins/vault-nickname/data.json
+
 # jest coverage files
 /coverage
+
+# Machine-generated documentation of source code
+/code-docs/
 
 # Code analysis output files
 /circular-deps.png
@@ -35,7 +45,13 @@ yarn-error.log
 # files in local vaults
 **/workspace
 **/workspace.json
-.hotreload
+**/workspace-mobile.json
 
 # Backup files.
 *.bak
+
+# Internationalisation
+/src/i18n/locales/*_old.json
+
+# VS code config
+.vscode/

@@ -20,8 +20,9 @@ import {
 } from '../../CustomMatchers/CustomMatchersForSorting';
 import { fromLine } from '../../TestingTools/TestHelpers';
 import { Query } from '../../../src/Query/Query';
-import { TasksDate } from '../../../src/Scripting/TasksDate';
+import { TasksDate } from '../../../src/DateTime/TasksDate';
 import { Priority } from '../../../src/Task/Priority';
+import { TasksFile } from '../../../src/Scripting/TasksFile';
 
 window.moment = moment;
 
@@ -59,11 +60,11 @@ describe('FunctionField - filtering', () => {
             'filter by function task.file.path === query.file.path',
         );
         expect(tasksInSameFileAsQuery).toBeValid();
-        const queryFilePath = '/a/b/query.md';
+        const queryTasksFile = new TasksFile('/a/b/query.md');
 
-        const taskInQueryFile: Task = new TaskBuilder().path(queryFilePath).build();
+        const taskInQueryFile: Task = new TaskBuilder().path(queryTasksFile.path).build();
         const taskNotInQueryFile: Task = new TaskBuilder().path('some other path.md').build();
-        const searchInfo = new SearchInfo(queryFilePath, [taskInQueryFile, taskNotInQueryFile]);
+        const searchInfo = new SearchInfo(queryTasksFile, [taskInQueryFile, taskNotInQueryFile]);
 
         expect(tasksInSameFileAsQuery.filterFunction!(taskInQueryFile, searchInfo)).toEqual(true);
         expect(tasksInSameFileAsQuery.filterFunction!(taskNotInQueryFile, searchInfo)).toEqual(false);
@@ -521,7 +522,7 @@ describe('FunctionField - grouping return types', () => {
         ['1', ['1']],
         ['0', ['0']],
         ['0 || "No value"', ['No value']],
-        ['1.0765456', ['1.0765456']],
+        ['1.0765456', ['1.07655']],
         ['1.0765456.toFixed(3)', ['1.077']],
         ['["heading1", "heading2"]', ['heading1', 'heading2']], // return two headings, indicating that this task should be displayed twice, once in each heading
         ['[1, 2]', ['1', '2']], // return two headings, that need to be converted to strings
@@ -582,15 +583,15 @@ describe('FunctionField - grouping - example functions', () => {
         // A single space as the character in a heading is not useful, so replace with something displayable:
         const line = 'group by function task.status.symbol.replace(" ", "space")';
         const grouper = createGrouper(line);
-        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.makeCancelled()), ['-']);
-        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.makeTodo()), ['space']);
+        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.CANCELLED), ['-']);
+        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.TODO), ['space']);
     });
 
     it('group by status nextStatusSymbol', () => {
         const line = 'group by function task.status.nextStatusSymbol.replace(" ", "space")';
         const grouper = createGrouper(line);
-        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.makeInProgress()), ['x']);
-        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.makeDone()), ['space']);
+        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.IN_PROGRESS), ['x']);
+        toGroupTaskFromBuilder(grouper, new TaskBuilder().status(Status.DONE), ['space']);
     });
 
     it('group by using number', () => {
@@ -617,6 +618,8 @@ describe('FunctionField - grouping - example functions', () => {
         const line = 'group by function query.file.filename';
         const grouper = createGrouper(line);
         const task = new TaskBuilder().build();
-        toGroupTaskUsingSearchInfo(grouper, task, new SearchInfo('queries/query file.md', [task]), ['query file.md']);
+        toGroupTaskUsingSearchInfo(grouper, task, new SearchInfo(new TasksFile('queries/query file.md'), [task]), [
+            'query file.md',
+        ]);
     });
 });

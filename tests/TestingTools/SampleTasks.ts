@@ -1,13 +1,15 @@
+import { Occurrence } from '../../src/Task/Occurrence';
 import { Task } from '../../src/Task/Task';
 import { Recurrence } from '../../src/Task/Recurrence';
 import { Status } from '../../src/Statuses/Status';
 import { StatusType } from '../../src/Statuses/StatusConfiguration';
 import { Priority } from '../../src/Task/Priority';
 import { PriorityTools } from '../../src/lib/PriorityTools';
+import { OnCompletion } from '../../src/Task/OnCompletion';
 import { TaskBuilder } from './TaskBuilder';
 import { fromLine, fromLines } from './TestHelpers';
 
-const representativeDates = ['2023-05-30', '2023-05-31', '2023-06-01', '2023-02-32', null];
+const representativeDates = ['2023-05-30', '2023-05-31', '2023-06-01', '2023-06-02', '2023-02-32', null];
 
 export class SampleTasks {
     public static withRepresentativeTags(): Task[] {
@@ -55,9 +57,11 @@ export class SampleTasks {
                 .recurrence(
                     Recurrence.fromText({
                         recurrenceRuleText: recurrenceRule,
-                        startDate: null,
-                        scheduledDate: null,
-                        dueDate: null,
+                        occurrence: new Occurrence({
+                            startDate: null,
+                            scheduledDate: null,
+                            dueDate: null,
+                        }),
                     }),
                 )
                 .build();
@@ -97,6 +101,14 @@ export class SampleTasks {
                 precedingHeader: heading,
             });
         });
+    }
+
+    public static withRepresentativeLineNumbers(): Task[] {
+        const taskBuilders = [
+            new TaskBuilder().lineNumber(42).description('line 42'),
+            new TaskBuilder().lineNumber(0).description('line 0'),
+        ];
+        return taskBuilders.map((builder) => builder.build());
     }
 
     public static withAllRepresentativeCreatedDates(): Task[] {
@@ -141,12 +153,12 @@ export class SampleTasks {
         }
 
         const taskBuilders = [
-            new TaskBuilder().status(Status.makeTodo()).description(desc('created')).createdDate('2023-04-13'),
-            new TaskBuilder().status(Status.makeTodo()).description(desc('scheduled')).scheduledDate('2023-04-14'),
-            new TaskBuilder().status(Status.makeTodo()).description(desc('start')).startDate('2023-04-15'),
-            new TaskBuilder().status(Status.makeTodo()).description(desc('due')).dueDate('2023-04-16'),
-            new TaskBuilder().status(Status.makeDone()).description(desc('done')).doneDate('2023-04-17'),
-            new TaskBuilder().status(Status.makeCancelled()).description(desc('cancelled')).cancelledDate('2023-04-18'),
+            new TaskBuilder().status(Status.TODO).description(desc('created')).createdDate('2023-04-13'),
+            new TaskBuilder().status(Status.TODO).description(desc('scheduled')).scheduledDate('2023-04-14'),
+            new TaskBuilder().status(Status.TODO).description(desc('start')).startDate('2023-04-15'),
+            new TaskBuilder().status(Status.TODO).description(desc('due')).dueDate('2023-04-16'),
+            new TaskBuilder().status(Status.DONE).description(desc('done')).doneDate('2023-04-17'),
+            new TaskBuilder().status(Status.CANCELLED).description(desc('cancelled')).cancelledDate('2023-04-18'),
         ];
         // If this test fails, a new date format is now supported, and needs to be added to the above list:
         const documentedDateFieldsCount = taskBuilders.length;
@@ -158,12 +170,12 @@ export class SampleTasks {
 
     public static withAllStatuses(): Task[] {
         const statuses = [
-            Status.makeCancelled(),
-            Status.makeDone(),
-            Status.makeEmpty(),
-            Status.makeInProgress(),
-            Status.makeTodo(),
-            Status.makeNonTask(),
+            Status.CANCELLED,
+            Status.DONE,
+            Status.EMPTY,
+            Status.IN_PROGRESS,
+            Status.TODO,
+            Status.NON_TASK,
         ];
 
         return statuses.map((status) => {
@@ -182,7 +194,7 @@ export class SampleTasks {
             .statusValues('^', 'non-task', 'x', false, StatusType.NON_TASK)
             .description('Non-task')
             .build();
-        const emptTask = new TaskBuilder().status(Status.makeEmpty()).description('Empty task').build();
+        const emptTask = new TaskBuilder().status(Status.EMPTY).description('Empty task').build();
 
         return [todoTask, inprTask, doneTask, cancTask, unknTask, non_Task, emptTask];
     }
@@ -216,8 +228,11 @@ export class SampleTasks {
         const id1 = 'dcf64c';
         const id2 = '0h17ye';
         return [
-            new TaskBuilder().description('do this first').id(id1).build(),
-            new TaskBuilder().description('do this after first and some other task').blockedBy([id1, id2]).build(),
+            new TaskBuilder().description('#task do this first').id(id1).build(),
+            new TaskBuilder()
+                .description('#task do this after first and some other task')
+                .dependsOn([id1, id2])
+                .build(),
         ];
     }
 
@@ -227,42 +242,42 @@ export class SampleTasks {
             '- [x] No dependency - DONE',
             //
             '- [ ] scenario 1 - TODO depends on TODO 🆔 scenario1',
-            '- [ ] scenario 1 - TODO depends on TODO ⛔️ scenario1',
+            '- [ ] scenario 1 - TODO depends on TODO ⛔ scenario1',
             //
             '- [x] scenario 2 - TODO depends on DONE 🆔 scenario2',
-            '- [ ] scenario 2 - TODO depends on DONE ⛔️ scenario2',
+            '- [ ] scenario 2 - TODO depends on DONE ⛔ scenario2',
             //
             '- [ ] scenario 3 - DONE depends on TODO 🆔 scenario3',
-            '- [x] scenario 3 - DONE depends on TODO ⛔️ scenario3',
+            '- [x] scenario 3 - DONE depends on TODO ⛔ scenario3',
             //
             '- [x] scenario 4 - DONE depends on DONE 🆔 scenario4',
-            '- [x] scenario 4 - DONE depends on DONE ⛔️ scenario4',
+            '- [x] scenario 4 - DONE depends on DONE ⛔ scenario4',
             //
-            '- [ ] scenario 5 - TODO depends on non-existing ID ⛔️ nosuchid',
+            '- [ ] scenario 5 - TODO depends on non-existing ID ⛔ nosuchid',
             //
-            '- [ ] scenario 6 - TODO depends on self 🆔 self ⛔️ self',
+            '- [ ] scenario 6 - TODO depends on self 🆔 self ⛔ self',
             //
             '- [x] scenario 7 - task with duplicated id - this is DONE                                  - 🆔 scenario7',
             '- [ ] scenario 7 - task with duplicated id - this is TODO - and is blocking                - 🆔 scenario7',
-            '- [ ] scenario 7 - TODO depends on id that is duplicated - ensure all tasks are checked    - ⛔️ scenario7',
+            '- [ ] scenario 7 - TODO depends on id that is duplicated - ensure all tasks are checked    - ⛔ scenario7',
             //
-            '- [ ] scenario 8 - mutually dependant 🆔 scenario8a ⛔️ scenario8b',
-            '- [ ] scenario 8 - mutually dependant 🆔 scenario8b ⛔️ scenario8a',
+            '- [ ] scenario 8 - mutually dependant 🆔 scenario8a ⛔ scenario8b',
+            '- [ ] scenario 8 - mutually dependant 🆔 scenario8b ⛔ scenario8a',
             //
-            '- [ ] scenario 9 - cyclic dependency 🆔 scenario9a ⛔️ scenario9c',
-            '- [ ] scenario 9 - cyclic dependency 🆔 scenario9b ⛔️ scenario9a',
-            '- [ ] scenario 9 - cyclic dependency 🆔 scenario9c ⛔️ scenario9b',
+            '- [ ] scenario 9 - cyclic dependency 🆔 scenario9a ⛔ scenario9c',
+            '- [ ] scenario 9 - cyclic dependency 🆔 scenario9b ⛔ scenario9a',
+            '- [ ] scenario 9 - cyclic dependency 🆔 scenario9c ⛔ scenario9b',
             //
             '- [ ] scenario 10 - multiple dependencies TODO         - 🆔 scenario10a',
             '- [/] scenario 10 - multiple dependencies IN_PROGRESS  - 🆔 scenario10b',
             '- [x] scenario 10 - multiple dependencies DONE         - 🆔 scenario10c',
             '- [-] scenario 10 - multiple dependencies CANCELLED    - 🆔 scenario10d',
             '- [Q] scenario 10 - multiple dependencies NON_TASK     - 🆔 scenario10e',
-            '- [ ] scenario 10 - multiple dependencies              - ⛔️ scenario10a,scenario10b,scenario10c,scenario10d,scenario10e',
+            '- [ ] scenario 10 - multiple dependencies              - ⛔ scenario10a,scenario10b,scenario10c,scenario10d,scenario10e',
             //
             '- [ ] scenario 11 - indirect dependency - indirect blocking of scenario11c ignored - 🆔 scenario11a',
-            '- [x] scenario 11 - indirect dependency - DONE                                     - 🆔 scenario11b ⛔️ scenario11a',
-            '- [ ] scenario 11 - indirect dependency - indirect blocking of scenario11a ignored - 🆔 scenario11c ⛔️ scenario11b',
+            '- [x] scenario 11 - indirect dependency - DONE                                     - 🆔 scenario11b ⛔ scenario11a',
+            '- [ ] scenario 11 - indirect dependency - indirect blocking of scenario11a ignored - 🆔 scenario11c ⛔ scenario11b',
         ];
         return fromLines({ lines });
     }
@@ -272,5 +287,25 @@ export class SampleTasks {
         return descriptions.map((blockLink) => {
             return new TaskBuilder().blockLink(blockLink).build();
         });
+    }
+
+    public static withSampleOnCompletionValues() {
+        const everyDay = Recurrence.fromText({
+            recurrenceRuleText: 'every day',
+            occurrence: new Occurrence({
+                startDate: null,
+                scheduledDate: null,
+                dueDate: null,
+            }),
+        });
+        return [
+            new TaskBuilder().description('#task Keep this task when done').onCompletion(OnCompletion.Ignore),
+            new TaskBuilder().description('#task Keep this task when done too').onCompletion(OnCompletion.Keep),
+            new TaskBuilder().description('#task Remove this task when done').onCompletion(OnCompletion.Delete),
+            new TaskBuilder()
+                .description('#task Remove completed instance of this recurring task when done')
+                .onCompletion(OnCompletion.Delete)
+                .recurrence(everyDay),
+        ].map((builder) => builder.build());
     }
 }

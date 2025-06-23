@@ -1,3 +1,4 @@
+import { TasksFile } from '../../src/Scripting/TasksFile';
 import { Task } from '../../src/Task/Task';
 import { TaskLocation } from '../../src/Task/TaskLocation';
 
@@ -16,7 +17,7 @@ export function fromLine({
 }) {
     return Task.fromLine({
         line,
-        taskLocation: new TaskLocation(path, 0, 0, 0, precedingHeader),
+        taskLocation: new TaskLocation(new TasksFile(path), 0, 0, 0, precedingHeader),
         fallbackDate: null,
     })!;
 }
@@ -49,9 +50,17 @@ export function toLine(task: Task) {
 /**
  * @see toLine
  * @see fromLines
+ * @see toMarkdown
  */
 export function toLines(tasks: Task[]) {
     return tasks.map((task) => toLine(task));
+}
+
+/**
+ * @see toLines
+ */
+export function toMarkdown(tasks: Task[]) {
+    return toLines(tasks).join('\n');
 }
 
 /**
@@ -63,7 +72,7 @@ export function createTasksFromMarkdown(tasksAsMarkdown: string, path: string, p
     for (const line of taskLines) {
         const task = Task.fromLine({
             line: line,
-            taskLocation: new TaskLocation(path, 0, 0, 0, precedingHeader),
+            taskLocation: new TaskLocation(new TasksFile(path), 0, 0, 0, precedingHeader),
             fallbackDate: null,
         });
         if (task) {

@@ -165,6 +165,11 @@ group by function "Next status symbol: " + task.status.nextSymbol.replace(" ", "
 
 ## Group by Task Dependencies
 
+At a high level, task dependencies define the order in which you want to work on a set of tasks. You can read more about them in [[Task Dependencies]].
+
+> [!released]
+> Task Dependencies were introduced in Tasks 6.1.0.
+
 ### Id
 
 - `group by id`
@@ -173,9 +178,9 @@ For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - Task Id was introduced in Tasks X.Y.Z.
+> - Task Id was introduced in Tasks 6.1.0.
 
-Since Tasks X.Y.Z, **[[Custom Grouping|custom grouping]] by Id** is now possible, using `task.id`.
+Since Tasks 6.1.0, **[[Custom Grouping|custom grouping]] by Id** is now possible, using `task.id`.
 
 <!-- placeholder to force blank line before included text --><!-- include: CustomGroupingExamples.test.dependencies_task.id_docs.approved.md -->
 
@@ -188,22 +193,22 @@ group by function task.id
 
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
-### Blocked By
+### Depends On
 
-There is no built-in instruction to group by 'Blocked By'.
+There is no built-in instruction to group by 'Depends On'.
 
 For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - Task Blocked By was introduced in Tasks X.Y.Z.
+> - Task Depends On was introduced in Tasks 6.1.0.
 
-Since Tasks X.Y.Z, **[[Custom Grouping|custom grouping]]  by Blocked By** is now possible, using `task.blockedBy`.
+Since Tasks 6.1.0, **[[Custom Grouping|custom grouping]] by Depends On** is now possible, using `task.dependsOn`.
 
-<!-- placeholder to force blank line before included text --><!-- include: CustomGroupingExamples.test.dependencies_task.blockedBy_docs.approved.md -->
+<!-- placeholder to force blank line before included text --><!-- include: CustomGroupingExamples.test.dependencies_task.dependsOn_docs.approved.md -->
 
 ```javascript
-group by function task.blockedBy
+group by function task.dependsOn
 ```
 
 - Group by the Ids of the tasks that each task depends on, if any.
@@ -244,7 +249,7 @@ group by function task.due.fromNow.groupText
 ```
 
 - Group by the [time from now](https://momentjs.com/docs/#/displaying/fromnow/), for example `8 days ago`, `in 11 hours`.
-- It users an empty string (so no heading) if there is no due date.
+- It uses an empty string (so no heading) if there is no due date.
 - The values `task.due.fromNow.name` and `task.due.fromNow.sortOrder` are also available.
 
 ```javascript
@@ -370,6 +375,22 @@ group by function \
 ```
 
 - As above, but using a local function, and `if` statements.
+
+```javascript
+group by function \
+    const date = task.due.moment; \
+    const tomorrow  = moment().add(1,'days'); \
+    const now = moment(); \
+    const label = (order, name) => `%%${order}%% ==${name}==`; \
+    if (!date)                           return label(5, 'Undated'); \
+    if (!date.isValid())                 return label(0, 'Invalid date'); \
+    if (date.isBefore(now, 'day'))       return label(1, 'Overdue'); \
+    if (date.isSame(now, 'day'))         return label(2, 'Today'); \
+    if (date.isSame(tomorrow, 'day'))    return label(3, 'Tomorrow'); \
+    return label(4, 'Future');
+```
+
+- As above, but adds a heading for Tomorrow.
 
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
@@ -642,6 +663,15 @@ group by function task.urgency.toFixed(3)
 
 - Show the urgency to 3 decimal places, unlike the built-in "group by urgency" which uses 2.
 
+```javascript
+group by function task.urgency
+```
+
+- Show non-integer urgency values to 5 decimal places, and integer ones to 0 decimal places.
+- Sorting of groups by name has been found to be unreliable with varying numbers of decimal places.
+- So to ensure consistent sorting, Tasks will round non-integer numbers to a fixed 5 decimal places, returning the value as a string.
+- This still sorts consistently even when some of the group's values are integers.
+
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
 ### Recurrence
@@ -807,6 +837,19 @@ group by function task.originalMarkdown.replace(/^[^\[\]]+\[.\] */, '')
 
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
+### Line Number
+
+There is no built-in instruction to group by the task's line number.
+
+Since Tasks 7.16.0, **[[Custom Grouping|custom grouping]] by the task's line number** is now possible, using `task.lineNumber`.
+
+> [!tip]
+> With `task.lineNumber`, the first line in the file is on line number `0` (zero), not `1` (one).
+
+<!-- placeholder to force blank line before included text --><!-- include: CustomGroupingExamples.test.other_properties_task.lineNumber_docs.approved.md -->
+
+<!-- placeholder to force blank line after included text --><!-- endInclude -->
+
 ## Group by File Properties
 
 ### File Path
@@ -821,7 +864,7 @@ Since Tasks 4.0.0, **[[Custom Grouping|custom grouping]] by file path** is now p
 group by function task.file.path
 ```
 
-- Like 'group by path' but includes the file extension.
+- Like 'group by path' but includes the file extension, and does not escape any Markdown formatting characters in the path.
 
 ```javascript
 group by function task.file.path.replace(query.file.folder, '')
@@ -854,7 +897,7 @@ Since Tasks 4.0.0, **[[Custom Grouping|custom grouping]] by root folder** is now
 group by function task.file.root
 ```
 
-- Same as 'group by root'.
+- Like 'group by root' except that it does not escape any Markdown formatting characters in the root.
 
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 
@@ -875,7 +918,7 @@ Since Tasks 4.0.0, **[[Custom Grouping|custom grouping]] by folder** is now poss
 group by function task.file.folder
 ```
 
-- Same as 'group by folder'.
+- Like 'group by folder', except that it does not escape any Markdown formatting characters in the folder.
 
 ```javascript
 group by function task.file.folder.slice(0, -1).split('/').pop() + '/'
@@ -958,7 +1001,7 @@ Each subsequent `group by` will generate a new heading-level within the existing
 - Second `group by` is displayed as `h5` headings
 - Third and subsequent `group by` are displayed as `h6` headings
 
-See the [screenshots below](#screenshots) for how this looks in practice.
+See the [[#Screenshots|screenshots below]] for how this looks in practice.
 
 > [!info]
 > Headings are displayed in case-sensitive alphabetical order, not the original order.

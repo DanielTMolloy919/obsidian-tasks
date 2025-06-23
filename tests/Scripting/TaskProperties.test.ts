@@ -10,6 +10,10 @@ import { verifyMarkdownForDocs } from '../TestingTools/VerifyMarkdown';
 import { parseAndEvaluateExpression } from '../../src/Scripting/TaskExpression';
 import { MarkdownTable } from '../../src/lib/MarkdownTable';
 import { makeQueryContextWithTasks } from '../../src/Scripting/QueryContext';
+import { TasksFile } from '../../src/Scripting/TasksFile';
+import type { Task } from '../../src/Task/Task';
+import { readTasksFromSimulatedFile } from '../Obsidian/SimulatedFile';
+import docs_sample_for_task_properties_reference from '../Obsidian/__test_data__/docs_sample_for_task_properties_reference.json';
 import { addBackticks, determineExpressionType, formatToRepresentType } from './ScriptingTestHelpers';
 
 window.moment = moment;
@@ -18,20 +22,27 @@ window.moment = moment;
 
 describe('task', () => {
     function verifyFieldDataForReferenceDocs(fields: string[]) {
-        const markdownTable = new MarkdownTable(['Field', 'Type 1', 'Example 1', 'Type 2', 'Example 2']);
         const task1 = TaskBuilder.createFullyPopulatedTask();
-        const task2 = new TaskBuilder().description('minimal task').status(Status.makeInProgress()).build();
-        const queryContext = makeQueryContextWithTasks(task1.path, [task1, task2]);
+        const task2 = new TaskBuilder().description('minimal task').status(Status.IN_PROGRESS).build();
+        verifyFieldDataFromTasksForReferenceDocs([task1, task2], fields);
+    }
+
+    function verifyFieldDataFromTasksForReferenceDocs(tasks: Task[], fields: string[]) {
+        const headings = ['Field'];
+        tasks.forEach((_, index) => {
+            headings.push(`Type ${index + 1}`);
+            headings.push(`Example ${index + 1}`);
+        });
+        const markdownTable = new MarkdownTable(headings);
+
+        const queryContext = makeQueryContextWithTasks(new TasksFile(tasks[0].path), tasks);
         for (const field of fields) {
-            const value1 = parseAndEvaluateExpression(task1, field, queryContext);
-            const value2 = parseAndEvaluateExpression(task2, field, queryContext);
-            const cells = [
-                addBackticks(field),
-                addBackticks(determineExpressionType(value1)),
-                addBackticks(formatToRepresentType(value1)),
-                addBackticks(determineExpressionType(value2)),
-                addBackticks(formatToRepresentType(value2)),
-            ];
+            const cells = [addBackticks(field)];
+            for (const task of tasks) {
+                const value = parseAndEvaluateExpression(task, field, queryContext);
+                cells.push(addBackticks(determineExpressionType(value)));
+                cells.push(addBackticks(formatToRepresentType(value)));
+            }
             markdownTable.addRow(cells);
         }
         verifyMarkdownForDocs(markdownTable.markdown);
@@ -97,7 +108,7 @@ describe('task', () => {
         verifyFieldDataForReferenceDocs([
             // force line break
             'task.id',
-            'task.blockedBy',
+            'task.dependsOn',
             'task.isBlocked(query.allTasks)',
             'task.isBlocking(query.allTasks)',
         ]);
@@ -113,11 +124,13 @@ describe('task', () => {
             'task.urgency',
             'task.isRecurring',
             'task.recurrenceRule',
+            'task.onCompletion',
             'task.tags',
             // 'task.indentation', // Cannot just use length to determine if sub-task, as it many be '> ' due to being in a sub-task
             // 'task.listMarker', // Not a priority to release
             // 'task.blockLink', // Release support for grouping by task.blockLink, after removing the leading space and maybe the carat
             'task.originalMarkdown',
+            'task.lineNumber',
         ]);
     });
 
@@ -131,6 +144,29 @@ describe('task', () => {
             'task.file.filenameWithoutExtension',
             'task.hasHeading',
             'task.heading',
+        ]);
+    });
+
+    it('frontmatter properties', () => {
+        const tasks = readTasksFromSimulatedFile(docs_sample_for_task_properties_reference as any);
+        // Show just the first task:
+        verifyFieldDataFromTasksForReferenceDocs(tasks.slice(0, 1), [
+            "task.file.hasProperty('creation date')",
+            "task.file.property('creation date')",
+            "task.file.property('sample_checkbox_property')",
+            "task.file.property('sample_date_property')",
+            "task.file.property('sample_date_and_time_property')",
+            "task.file.property('sample_list_property')",
+            "task.file.property('sample_number_property')",
+            "task.file.property('sample_text_property')",
+            "task.file.property('sample_text_multiline_property')",
+            "task.file.property('sample_link_property')",
+            "task.file.property('sample_link_list_property')",
+            "task.file.property('tags')",
+            // 'task.file.tags', // TODO Replace
+            // 'task.file.tags()', // TODO Implement
+            // "task.file.tags('body')", // TODO Implement
+            // "task.file.tags('properties')", // TODO Implement
         ]);
     });
 });

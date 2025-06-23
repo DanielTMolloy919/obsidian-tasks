@@ -3,6 +3,7 @@
  */
 import moment from 'moment';
 import { verifyAll } from 'approvals/lib/Providers/Jest/JestApprovals';
+import { TasksFile } from '../../src/Scripting/TasksFile';
 import { Status } from '../../src/Statuses/Status';
 import { Task } from '../../src/Task/Task';
 import { resetSettings, updateSettings } from '../../src/Config/Settings';
@@ -11,12 +12,17 @@ import type { StatusCollection } from '../../src/Statuses/StatusCollection';
 import { StatusRegistry } from '../../src/Statuses/StatusRegistry';
 import { TaskLocation } from '../../src/Task/TaskLocation';
 import { StatusConfiguration, StatusType } from '../../src/Statuses/StatusConfiguration';
-import { fromLine } from '../TestingTools/TestHelpers';
+import { fromLine, toMarkdown } from '../TestingTools/TestHelpers';
 import { TaskBuilder } from '../TestingTools/TaskBuilder';
 import { RecurrenceBuilder } from '../TestingTools/RecurrenceBuilder';
 import { Priority } from '../../src/Task/Priority';
 import { SampleTasks } from '../TestingTools/SampleTasks';
 import { booleanToEmoji } from '../TestingTools/FilterTestHelpers';
+import type { TasksDate } from '../../src/DateTime/TasksDate';
+import example_kanban from '../Obsidian/__test_data__/example_kanban.json';
+import jason_properties from '../Obsidian/__test_data__/jason_properties.json';
+import { OnCompletion } from '../../src/Task/OnCompletion';
+import { createChildListItem } from './ListItemHelpers';
 
 window.moment = moment;
 
@@ -24,6 +30,48 @@ afterEach(() => {
     jest.useRealTimers();
     resetSettings();
     GlobalFilter.getInstance().reset();
+});
+
+describe('immutability', () => {
+    it.failing('should not be possible to edit a date Moment after Task creation', () => {
+        // TODO Make Task's use of Moment immutable - always return a clone of the stored Moment.
+        //      https://momentjscom.readthedocs.io/en/latest/moment/01-parsing/12-moment-clone/
+
+        const inputDate = '2024-02-28 12:34';
+        const task = new Task({ ...new TaskBuilder().build(), dueDate: moment(inputDate) });
+
+        const parsedDate = '2024-02-28T12:34:00.000Z';
+        expect(task.dueDate).toEqualMoment(moment(parsedDate));
+
+        task.dueDate?.startOf('day');
+        // TODO This fails, giving '2024-02-28T00:00:00.000Z', as the startOf call edits the stored date.
+        //      See https://www.geeksforgeeks.org/moment-js-moment-startof-method/.
+        expect(task.dueDate).toEqualMoment(moment(parsedDate));
+    });
+
+    it.failing('should not be possible to edit a date TasksDate after Task creation', () => {
+        // TODO Make TasksDate objects immutable - always return a clone of the stored Moment.
+        //      https://momentjscom.readthedocs.io/en/latest/moment/01-parsing/12-moment-clone/
+
+        const inputDate = '2024-02-28 12:34';
+        const task = new Task({ ...new TaskBuilder().build(), dueDate: moment(inputDate) });
+
+        const due: TasksDate = task.due;
+        const parsedDate = '2024-02-28T12:34:00.000Z';
+        expect(due.moment).toEqualMoment(moment(parsedDate));
+
+        due.moment?.startOf('day');
+        // TODO This fails, giving '2024-02-28T00:00:00.000Z', as the startOf call edits the stored date.
+        //      See https://www.geeksforgeeks.org/moment-js-moment-startof-method/.
+        expect(due.moment).toEqualMoment(moment(parsedDate));
+    });
+});
+
+describe('list item-related tests', () => {
+    it('should be a task', () => {
+        const task = fromLine({ line: '- [ ] A Task' });
+        expect(task.isTask).toBe(true);
+    });
 });
 
 describe('parsing', () => {
@@ -46,6 +94,8 @@ describe('parsing', () => {
         expect(task!.doneDate).toEqualMoment(moment('2021-06-20'));
         expect(task!.originalMarkdown).toStrictEqual(line);
         expect(task!.lineNumber).toEqual(0);
+        expect(task.parent).toBeNull();
+        expect(task.children).toEqual([]);
     });
 
     it('parses a task from a line starting with asterisk', () => {
@@ -422,7 +472,7 @@ describe('parsing tags', () => {
             // Act
             const task = Task.fromLine({
                 line: markdownTask,
-                taskLocation: TaskLocation.fromUnknownPosition('file.md'),
+                taskLocation: TaskLocation.fromUnknownPosition(new TasksFile('file.md')),
                 fallbackDate: null,
             });
 
@@ -483,10 +533,10 @@ describe('task parsing VS global filter', () => {
 
 describe('properties for scripting', () => {
     it('should provide isDone for convenience', () => {
-        expect(new TaskBuilder().status(Status.makeTodo()).build().isDone).toEqual(false);
-        expect(new TaskBuilder().status(Status.makeInProgress()).build().isDone).toEqual(false);
-        expect(new TaskBuilder().status(Status.makeDone()).build().isDone).toEqual(true);
-        expect(new TaskBuilder().status(Status.makeCancelled()).build().isDone).toEqual(true);
+        expect(new TaskBuilder().status(Status.TODO).build().isDone).toEqual(false);
+        expect(new TaskBuilder().status(Status.IN_PROGRESS).build().isDone).toEqual(false);
+        expect(new TaskBuilder().status(Status.DONE).build().isDone).toEqual(true);
+        expect(new TaskBuilder().status(Status.CANCELLED).build().isDone).toEqual(true);
         expect(
             new TaskBuilder()
                 .status(new Status(new StatusConfiguration('%', 'Non-task', ' ', true, StatusType.NON_TASK)))
@@ -1055,12 +1105,14 @@ describe('toggle done', () => {
 
         // Testing 'when done' does not skip when next occurrence is a non-existent date
         {
+            // This also showed the existence of #2867 - which caused the done date to be '2021-08-30'
             interval: 'every month when done',
             scheduled: '1999-01-23',
             today: '2021-08-31',
             nextScheduled: '2021-09-30',
         },
         {
+            // This also showed the existence of #2867 - which caused the done date to be '2020-02-28'
             interval: 'every 2 years when done',
             start: '1999-01-23',
             today: '2020-02-29', // is a leap year
@@ -1092,12 +1144,8 @@ describe('toggle done', () => {
         },
     ];
 
-    // This was calling test.concurrent.each() to run the tests in parallel, but I couldn't
-    // get it to run beforeAll() before running the tests.
-    // https://github.com/facebook/jest/issues/7997#issuecomment-796965078
-    test.each<RecurrenceCase>(recurrenceCases)(
-        'recurs correctly (%j)',
-        ({
+    function testRecurrenceCase(recurrenceCase: RecurrenceCase) {
+        const {
             // inputs:
             interval,
             symbol,
@@ -1112,60 +1160,76 @@ describe('toggle done', () => {
             nextScheduled,
             nextStart,
             nextInterval,
-        }) => {
-            if (today) {
-                jest.useFakeTimers();
-                jest.setSystemTime(new Date(today));
-            }
+        } = recurrenceCase;
+        if (today) {
+            jest.useFakeTimers();
+            jest.setSystemTime(new Date(today));
+        }
 
-            // If this test fails, the RecurrenceCase had no expected new dates set, and so
-            // is accidentally not doing any testing.
-            const atLeaseOneExpectationSupplied =
-                nextStart !== undefined ||
-                nextDue !== undefined ||
-                nextScheduled !== undefined ||
-                nextSymbol !== undefined ||
-                doneSymbol !== undefined;
-            expect(atLeaseOneExpectationSupplied).toStrictEqual(true);
+        // If this test fails, the RecurrenceCase had no expected new dates set, and so
+        // is accidentally not doing any testing.
+        const atLeaseOneExpectationSupplied =
+            nextStart !== undefined ||
+            nextDue !== undefined ||
+            nextScheduled !== undefined ||
+            nextSymbol !== undefined ||
+            doneSymbol !== undefined;
+        expect(atLeaseOneExpectationSupplied).toStrictEqual(true);
 
-            const line = [
-                `- [${symbol ?? ' '}] I am task`,
-                `🔁 ${interval}`,
-                !!scheduled && `⏳ ${scheduled}`,
-                !!due && `📅 ${due}`,
-                !!start && `🛫 ${start}`,
-            ]
-                .filter(Boolean)
-                .join(' ');
+        const line = [
+            `- [${symbol ?? ' '}] I am task`,
+            `🔁 ${interval}`,
+            !!scheduled && `⏳ ${scheduled}`,
+            !!due && `📅 ${due}`,
+            !!start && `🛫 ${start}`,
+        ]
+            .filter(Boolean)
+            .join(' ');
 
-            const task = fromLine({
-                line,
-            });
+        const task = fromLine({
+            line,
+        });
 
-            const tasks = task!.toggle();
-            expect(tasks.length).toEqual(2);
-            const doneTask: Task = tasks[1];
-            const nextTask: Task = tasks[0];
+        const tasks = task!.toggle();
+        expect(tasks.length).toEqual(2);
+        const doneTask: Task = tasks[1];
+        const nextTask: Task = tasks[0];
 
-            expect(doneTask.status.symbol).toEqual(doneSymbol ?? 'x');
-            expect(nextTask.status.symbol).toEqual(nextSymbol ?? ' ');
+        expect(doneTask.status.symbol).toEqual(doneSymbol ?? 'x');
+        if (today) {
             expect({
-                nextDue: nextTask.dueDate?.format('YYYY-MM-DD'),
-                nextScheduled: nextTask.scheduledDate?.format('YYYY-MM-DD'),
-                nextStart: nextTask.startDate?.format('YYYY-MM-DD'),
+                doneDate: doneTask.doneDate?.format('YYYY-MM-DD'),
             }).toMatchObject({
-                nextDue,
-                nextScheduled,
-                nextStart,
+                doneDate: today,
             });
+        }
 
-            if (nextInterval) {
-                expect(nextTask.recurrence?.toText()).toBe(nextInterval);
-            } else {
-                expect(nextTask.recurrence?.toText()).toBe(interval);
-            }
-        },
-    );
+        expect(nextTask.status.symbol).toEqual(nextSymbol ?? ' ');
+        expect({
+            nextDue: nextTask.dueDate?.format('YYYY-MM-DD'),
+            nextScheduled: nextTask.scheduledDate?.format('YYYY-MM-DD'),
+            nextStart: nextTask.startDate?.format('YYYY-MM-DD'),
+        }).toMatchObject({
+            nextDue,
+            nextScheduled,
+            nextStart,
+        });
+
+        if (nextInterval) {
+            expect(nextTask.recurrence?.toText()).toBe(nextInterval);
+        } else {
+            expect(nextTask.recurrence?.toText()).toBe(interval);
+        }
+    }
+
+    // This was calling test.concurrent.each() to run the tests in parallel, but I couldn't
+    // get it to run beforeAll() before running the tests.
+    // https://github.com/facebook/jest/issues/7997#issuecomment-796965078
+    test.each<RecurrenceCase>(recurrenceCases)('recurs correctly (%j)', (recurrenceCase) => {
+        {
+            testRecurrenceCase(recurrenceCase);
+        }
+    });
 
     it('supports recurrence rule after a due date', () => {
         // Arrange
@@ -1193,6 +1257,38 @@ describe('toggle done', () => {
             nextStart: undefined,
         });
     });
+
+    describe('toggling tasks with dependencies fields', () => {
+        beforeEach(() => {
+            // By not adding the done date to these completed tasks, we:
+            //  1. Make the output more readable,
+            //  2. Remove the need to set a fixed fake current date.
+            updateSettings({ setDoneDate: false });
+        });
+
+        afterEach(() => {
+            resetSettings();
+        });
+
+        it('should retain id and dependsOn after toggle NON-recurring task', () => {
+            const task = fromLine({ line: '- [ ] should retain *id* and *dependsOn* 🆔 id2 ⛔ id1' });
+            const tasks = task.toggle();
+
+            expect(toMarkdown(tasks)).toMatchInlineSnapshot('"- [x] should retain *id* and *dependsOn* 🆔 id2 ⛔ id1"');
+        });
+
+        it('should remove id and dependsOn after toggle RECURRING task', () => {
+            const task = fromLine({
+                line: '- [ ] should remove *id* and *dependsOn* in next recurrence 🆔 id2 ⛔ id1 🔁 every day 📅 2024-02-13',
+            });
+            const tasks = task.toggle();
+
+            expect(toMarkdown(tasks)).toMatchInlineSnapshot(`
+                "- [ ] should remove *id* and *dependsOn* in next recurrence 🔁 every day 📅 2024-02-14
+                - [x] should remove *id* and *dependsOn* in next recurrence 🆔 id2 ⛔ id1 🔁 every day 📅 2024-02-13"
+            `);
+        });
+    });
 });
 
 describe('handle new status', () => {
@@ -1209,6 +1305,11 @@ describe('handle new status', () => {
     beforeEach(() => {
         jest.useFakeTimers();
         jest.setSystemTime(new Date('2023-06-26'));
+        resetSettings();
+    });
+
+    afterEach(() => {
+        resetSettings();
     });
 
     // Note: We only need to test transitions which are not covered by the standard 'toggle done' tests above.
@@ -1246,7 +1347,7 @@ describe('handle new status', () => {
         });
 
         // Act
-        const newTasks = doneTask.handleNewStatus(Status.makeDone());
+        const newTasks = doneTask.handleNewStatus(Status.DONE);
 
         // Assert
         expect(newTasks.length).toEqual(1);
@@ -1271,6 +1372,26 @@ describe('handle new status', () => {
         expect(newTasks[0].status.symbol).toEqual('X');
     });
 
+    it('should allow "today" to be overridden, and to determine created, done and next due dates', () => {
+        // Arrange
+        const originalTask = fromLine({
+            line: '- [ ] Annual task 🔁 every year when done 📅 1989-12-23',
+        });
+        const newStatus = StatusRegistry.getInstance().bySymbol('x');
+        updateSettings({ setCreatedDate: true });
+
+        // Act
+        const completionDate = moment('2023-01-23');
+        const newTasks = originalTask.handleNewStatus(newStatus, completionDate);
+
+        // Assert
+        // 'Created' date of new task is based on today, ignoring the manually set completion date.
+        expect(toMarkdown(newTasks)).toMatchInlineSnapshot(`
+            "- [ ] Annual task 🔁 every year when done ➕ 2023-06-26 📅 2024-01-23
+            - [x] Annual task 🔁 every year when done 📅 1989-12-23 ✅ 2023-01-23"
+        `);
+    });
+
     describe('cancelled dates and new status', () => {
         it('should add cancelled date and remove done date, if changing from DONE to CANCELLED', () => {
             // Arrange
@@ -1279,7 +1400,7 @@ describe('handle new status', () => {
             });
 
             // Act
-            const newTasks = doneTask.handleNewStatus(Status.makeCancelled());
+            const newTasks = doneTask.handleNewStatus(Status.CANCELLED);
 
             // Assert
             expect(newTasks).toMatchMarkdownLines(['- [-] Stuff 📅 2023-12-15 ❌ 2023-06-26']);
@@ -1293,7 +1414,7 @@ describe('handle new status', () => {
             });
 
             // Act
-            const newTasks = task.handleNewStatus(Status.makeCancelled());
+            const newTasks = task.handleNewStatus(Status.CANCELLED);
 
             // Assert
             expect(newTasks).toMatchMarkdownLines(['- [-] Stuff']);
@@ -1306,7 +1427,7 @@ describe('handle new status', () => {
             });
 
             // Act
-            const newTasks = cancelledTask.handleNewStatus(Status.makeCancelled());
+            const newTasks = cancelledTask.handleNewStatus(Status.CANCELLED);
 
             // Assert
             // Check that the cancelled date was not modified:
@@ -1320,7 +1441,7 @@ describe('handle new status', () => {
             });
 
             // Act
-            const newTasks = cancelledTask.handleNewStatus(Status.makeDone());
+            const newTasks = cancelledTask.handleNewStatus(Status.DONE);
 
             // Assert
             expect(newTasks).toMatchMarkdownLines([
@@ -1394,7 +1515,7 @@ describe('order of recurring tasks', () => {
 
     function expectLineToApplyDoneStatusInUsersOrder(line: string, expectedLines: string[]) {
         const task = fromLine({ line: line });
-        const tasks = task.handleNewStatusWithRecurrenceInUsersOrder(Status.makeDone());
+        const tasks = task.handleNewStatusWithRecurrenceInUsersOrder(Status.DONE);
         expect(tasks).toMatchMarkdownLines(expectedLines);
     }
 
@@ -1440,7 +1561,7 @@ describe('identicalTo', () => {
     // NEW_TASK_FIELD_EDIT_REQUIRED
 
     it('should check status', () => {
-        const lhs = new TaskBuilder().status(Status.makeTodo());
+        const lhs = new TaskBuilder().status(Status.TODO);
         expect(lhs).toBeIdenticalTo(new TaskBuilder().status(Status.TODO));
         expect(lhs).not.toBeIdenticalTo(new TaskBuilder().status(Status.DONE));
     });
@@ -1457,6 +1578,14 @@ describe('identicalTo', () => {
         // Check it is case-sensitive
         expect(lhs).not.toBeIdenticalTo(new TaskBuilder().path('Same Test File.md'));
         expect(lhs).not.toBeIdenticalTo(new TaskBuilder().path('different text.md'));
+    });
+
+    it('should check frontmatter/properties', () => {
+        const lhs = new TaskBuilder().mockData(example_kanban);
+        expect(lhs).toBeIdenticalTo(new TaskBuilder().mockData(example_kanban));
+
+        expect(lhs).not.toBeIdenticalTo(new TaskBuilder().mockData(undefined));
+        expect(lhs).not.toBeIdenticalTo(new TaskBuilder().mockData(jason_properties));
     });
 
     it('should check indentation', () => {
@@ -1550,7 +1679,7 @@ describe('identicalTo', () => {
         expect(lhs).not.toBeIdenticalTo(new TaskBuilder().cancelledDate('2012-12-26'));
     });
 
-    describe('should check recurrence', () => {
+    it('should check recurrence', () => {
         const lhs = new TaskBuilder().recurrence(null);
         expect(lhs).toBeIdenticalTo(new TaskBuilder().recurrence(null));
 
@@ -1578,10 +1707,16 @@ describe('identicalTo', () => {
         expect(lhs).not.toBeIdenticalTo(new TaskBuilder().id('12345'));
     });
 
-    it('should check blockedBy', () => {
-        const lhs = new TaskBuilder().blockedBy([]);
-        expect(lhs).toBeIdenticalTo(new TaskBuilder().blockedBy([]));
-        expect(lhs).not.toBeIdenticalTo(new TaskBuilder().blockedBy(['12345']));
+    it('should check dependsOn', () => {
+        const lhs = new TaskBuilder().dependsOn([]);
+        expect(lhs).toBeIdenticalTo(new TaskBuilder().dependsOn([]));
+        expect(lhs).not.toBeIdenticalTo(new TaskBuilder().dependsOn(['12345']));
+    });
+
+    it('should check onCompletion', () => {
+        const lhs = new TaskBuilder().onCompletion(OnCompletion.Ignore);
+        expect(lhs).toBeIdenticalTo(new TaskBuilder().onCompletion(OnCompletion.Ignore));
+        expect(lhs).not.toBeIdenticalTo(new TaskBuilder().onCompletion(OnCompletion.Delete));
     });
 
     it('should correctly compare a task with status read from user settings', () => {
@@ -1603,30 +1738,21 @@ describe('identicalTo', () => {
         expect(task2.status.identicalTo(task1.status)).toEqual(true);
         expect(task2.identicalTo(task1)).toEqual(true);
     });
-});
 
-describe('checking if task lists are identical', () => {
-    it('should treat empty lists as identical', () => {
-        const list1: Task[] = [];
-        const list2: Task[] = [];
-        expect(Task.tasksListsIdentical(list1, list2)).toBe(true);
+    it('should recognise different numbers of child items', () => {
+        const task1 = new TaskBuilder().build();
+        const task2 = new TaskBuilder().build();
+        createChildListItem('- child of task2', task2);
+
+        expect(task2.identicalTo(task1)).toEqual(false);
     });
 
-    it('should treat different sized lists as different', () => {
-        const list1: Task[] = [];
-        const list2: Task[] = [new TaskBuilder().build()];
-        expect(Task.tasksListsIdentical(list1, list2)).toBe(false);
-    });
+    it('should recognise different description in child list items', () => {
+        const task1 = new TaskBuilder().build();
+        const task2 = new TaskBuilder().build();
+        createChildListItem('- child of task1', task1);
+        createChildListItem('- child of task2', task2);
 
-    it('should detect matching tasks as same', () => {
-        const list1: Task[] = [new TaskBuilder().description('1').build()];
-        const list2: Task[] = [new TaskBuilder().description('1').build()];
-        expect(Task.tasksListsIdentical(list1, list2)).toBe(true);
-    });
-
-    it('should detect non-matching tasks as different', () => {
-        const list1: Task[] = [new TaskBuilder().description('1').build()];
-        const list2: Task[] = [new TaskBuilder().description('2').build()];
-        expect(Task.tasksListsIdentical(list1, list2)).toBe(false);
+        expect(task2.identicalTo(task1)).toEqual(false);
     });
 });

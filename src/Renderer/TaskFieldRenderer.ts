@@ -4,6 +4,14 @@ import type { TaskLayoutComponent } from '../Layout/TaskLayoutOptions';
 import { PriorityTools } from '../lib/PriorityTools';
 import type { Task } from '../Task/Task';
 
+/**
+ * A renderer for individual {@link Task} fields in an HTML context.
+ *
+ * This class provides methods to add data attributes and CSS class names to
+ * HTML elements based on specific task-related components.
+ *
+ * See also {@link TaskLineRenderer} which renders all the fields in a task.
+ */
 export class TaskFieldRenderer {
     private readonly data = taskFieldHTMLData;
 
@@ -44,11 +52,11 @@ export class TaskFieldHTMLData {
     private readonly attributeName: string;
     private readonly attributeValueCalculator: AttributeValueCalculator;
 
-    public static noAttributeName = '';
-    public static noAttributeValueCalculator: AttributeValueCalculator = () => {
+    public static readonly noAttributeName = '';
+    public static readonly noAttributeValueCalculator: AttributeValueCalculator = () => {
         return '';
     };
-    public static dateAttributeCalculator = (component: TaskLayoutComponent, task: Task) => {
+    public static readonly dateAttributeCalculator = (component: TaskLayoutComponent, task: Task) => {
         /**
          * Translate a relative date to a CSS class: 'today', 'future-1d' (for tomorrow), 'past-1d' (for yesterday)
          * etc.
@@ -60,12 +68,22 @@ export class TaskFieldHTMLData {
 
         function dateToAttribute(date: Moment) {
             const today = window.moment().startOf('day');
-            let result = '';
             const diffDays = today.diff(date, 'days');
-            if (isNaN(diffDays)) return null;
-            if (diffDays === 0) return 'today';
-            else if (diffDays > 0) result += 'past-';
-            else if (diffDays < 0) result += 'future-';
+
+            if (isNaN(diffDays)) {
+                return null;
+            }
+            if (diffDays === 0) {
+                return 'today';
+            }
+
+            let result = '';
+            if (diffDays > 0) {
+                result += 'past-';
+            } else if (diffDays < 0) {
+                result += 'future-';
+            }
+
             if (Math.abs(diffDays) <= MAX_DAY_VALUE_RANGE) {
                 result += Math.abs(diffDays).toString() + 'd';
             } else {
@@ -167,7 +185,8 @@ const taskFieldHTMLData: { [c in TaskLayoutComponent]: TaskFieldHTMLData } = {
 
     description: createFieldWithoutDataAttributes('task-description'),
     recurrenceRule: createFieldWithoutDataAttributes('task-recurring'),
-    blockedBy: createFieldWithoutDataAttributes('task-blockedBy'),
+    onCompletion: createFieldWithoutDataAttributes('task-onCompletion'),
+    dependsOn: createFieldWithoutDataAttributes('task-dependsOn'),
     id: createFieldWithoutDataAttributes('task-id'),
     blockLink: createFieldWithoutDataAttributes('task-block-link'),
 };

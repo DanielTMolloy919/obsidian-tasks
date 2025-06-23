@@ -1,15 +1,24 @@
+import {
+    type CachedMetadata,
+    type EventRef,
+    type HeadingCache,
+    type ListItemCache,
+    type SectionCache,
+    type Workspace,
+    debounce,
+} from 'obsidian';
 import { MetadataCache, Notice, TAbstractFile, TFile, Vault } from 'obsidian';
-import type { CachedMetadata, EventRef } from 'obsidian';
-import type { HeadingCache, ListItemCache, SectionCache } from 'obsidian';
 import { Mutex } from 'async-mutex';
+import { TasksFile } from '../Scripting/TasksFile';
+import { ListItem } from '../Task/ListItem';
 
 import { Task } from '../Task/Task';
-import { DateFallback } from '../Task/DateFallback';
+import { DateFallback } from '../DateTime/DateFallback';
 import { getSettings } from '../Config/Settings';
 import { Lazy } from '../lib/Lazy';
-import { TaskLocation } from '../Task/TaskLocation';
-import { logging } from '../lib/logging';
+import { Logger, logging } from '../lib/logging';
 import type { TasksEvents } from './TasksEvents';
+import { FileParser } from './FileParser';
 
 export enum State {
     Cold = 'Cold',
@@ -23,6 +32,7 @@ export class Cache {
     private readonly metadataCache: MetadataCache;
     private readonly metadataCacheEventReferences: EventRef[];
     private readonly vault: Vault;
+    private readonly workspace: Workspace;
     private readonly vaultEventReferences: EventRef[];
     private readonly events: TasksEvents;
     private readonly eventsEventReferences: EventRef[];
@@ -30,6 +40,12 @@ export class Cache {
     private readonly tasksMutex: Mutex;
     private state: State;
     private tasks: Task[];
+
+    private readonly notifySubscribersDebounced = debounce(
+        () => this.notifySubscribersNotDebounced(),
+        100, // Long enough to prevent successive redraws slowing performance; short enough for edits via context menus to appear snappy
+        true,
+    );
 
     /**
      * We cannot know if this class will be instantiated because obsidian started
@@ -41,12 +57,23 @@ export class Cache {
      */
     private loadedAfterFirstResolve: boolean;
 
-    constructor({ metadataCache, vault, events }: { metadataCache: MetadataCache; vault: Vault; events: TasksEvents }) {
+    constructor({
+        metadataCache,
+        vault,
+        workspace,
+        events,
+    }: {
+        metadataCache: MetadataCache;
+        vault: Vault;
+        workspace: Workspace;
+        events: TasksEvents;
+    }) {
         this.logger.debug('Creating Cache object');
 
         this.metadataCache = metadataCache;
         this.metadataCacheEventReferences = [];
         this.vault = vault;
+        this.workspace = workspace;
         this.vaultEventReferences = [];
         this.events = events;
         this.eventsEventReferences = [];
@@ -60,10 +87,16 @@ export class Cache {
         this.loadedAfterFirstResolve = false;
 
         this.subscribeToCache();
-        this.subscribeToVault();
-        this.subscribeToEvents();
 
-        this.loadVault();
+        // Subscribe to vault and load cache later when workspace is ready,
+        // prevents create events for every file, but loadVault cover all files anyway.
+        // For details see: https://docs.obsidian.md/Reference/TypeScript+API/Vault/on('create')
+        this.workspace.onLayoutReady(() => {
+            this.subscribeToVault();
+            this.loadVault();
+        });
+
+        this.subscribeToEvents();
     }
 
     public unload(): void {
@@ -92,6 +125,11 @@ export class Cache {
 
     private notifySubscribers(): void {
         this.logger.debug('Cache.notifySubscribers()');
+        this.notifySubscribersDebounced();
+    }
+
+    private notifySubscribersNotDebounced(): void {
+        this.logger.debug('Cache.notifySubscribersNotDebounced()');
         this.events.triggerCacheUpdate({
             tasks: this.tasks,
             state: this.state,
@@ -158,21 +196,23 @@ export class Cache {
             this.logger.debug(`Cache.subscribeToVault.renamedEventReference() ${file.path}`);
 
             this.tasksMutex.runExclusive(() => {
+                const fileCache = this.metadataCache.getFileCache(file);
+                // TODO What if the file has been renamed but the cache not yet updated?
+                const tasksFile = new TasksFile(file.path, fileCache ?? undefined);
                 const fallbackDate = new Lazy(() => DateFallback.fromPath(file.path));
 
                 this.tasks = this.tasks.map((task: Task): Task => {
-                    if (task.path === oldPath) {
-                        if (!useFilenameAsScheduledDate) {
-                            return new Task({
-                                ...task,
-                                taskLocation: task.taskLocation.fromRenamedFile(file.path),
-                            });
-                        } else {
-                            return DateFallback.updateTaskPath(task, file.path, fallbackDate.value);
-                        }
-                    } else {
+                    if (task.path !== oldPath) {
                         return task;
                     }
+                    const taskLocation = task.taskLocation.fromRenamedFile(tasksFile);
+                    if (useFilenameAsScheduledDate) {
+                        return DateFallback.updateTaskPath(task, taskLocation, fallbackDate.value);
+                    }
+                    return new Task({
+                        ...task,
+                        taskLocation,
+                    });
                 });
 
                 this.notifySubscribers();
@@ -234,12 +274,19 @@ export class Cache {
         if (listItems !== undefined) {
             // Only read the file and process for tasks if there are list items.
             const fileContent = await this.vault.cachedRead(file);
-            newTasks = this.getTasksFromFileContent(fileContent, listItems, fileCache, file);
+            newTasks = this.getTasksFromFileContent(
+                fileContent,
+                listItems,
+                fileCache,
+                file.path,
+                this.reportTaskParsingErrorToUser,
+                this.logger,
+            );
         }
 
         // If there are no changes in any of the tasks, there's
         // nothing to do, so just return.
-        if (Task.tasksListsIdentical(oldTasks, newTasks)) {
+        if (ListItem.listsAreIdentical(oldTasks, newTasks)) {
             // This code kept for now, to allow for debugging during development.
             // It is too verbose to release to users.
             // if (this.getState() == State.Warm) {
@@ -275,92 +322,19 @@ export class Cache {
         fileContent: string,
         listItems: ListItemCache[],
         fileCache: CachedMetadata,
-        file: TFile,
+        filePath: string,
+        errorReporter: (e: any, filePath: string, listItem: ListItemCache, line: string) => void,
+        logger: Logger,
     ): Task[] {
-        const tasks: Task[] = [];
-        const fileLines = fileContent.split('\n');
-        const linesInFile = fileLines.length;
-
-        // Lazily store date extracted from filename to avoid parsing more than needed
-        // this.logger.debug(`getTasksFromFileContent() reading ${file.path}`);
-        const dateFromFileName = new Lazy(() => DateFallback.fromPath(file.path));
-
-        // We want to store section information with every task so
-        // that we can use that when we post process the markdown
-        // rendered lists.
-        let currentSection: SectionCache | null = null;
-        let sectionIndex = 0;
-        for (const listItem of listItems) {
-            if (listItem.task !== undefined) {
-                const lineNumber = listItem.position.start.line;
-                if (lineNumber >= linesInFile) {
-                    /*
-                        Obsidian CachedMetadata has told us that there is a task on lineNumber, but there are
-                        not that many lines in the file.
-
-                        This was the underlying cause of all the 'Stuck on "Loading Tasks..."' messages,
-                        as it resulted in the line 'undefined' being parsed.
-
-                        Somehow the file had been shortened whilst Obsidian was closed, meaning that
-                        when Obsidian started up, it got the new file content, but still had the old cached
-                        data about locations of list items in the file.
-                     */
-                    this.logger.debug(
-                        `${file.path} Obsidian gave us a line number ${lineNumber} past the end of the file. ${linesInFile}.`,
-                    );
-                    return tasks;
-                }
-                if (currentSection === null || currentSection.position.end.line < lineNumber) {
-                    // We went past the current section (or this is the first task).
-                    // Find the section that is relevant for this task and the following of the same section.
-                    currentSection = Cache.getSection(lineNumber, fileCache.sections);
-                    sectionIndex = 0;
-                }
-
-                if (currentSection === null) {
-                    // Cannot process a task without a section.
-                    continue;
-                }
-
-                const line = fileLines[lineNumber];
-                if (line === undefined) {
-                    this.logger.debug(`${file.path}: line ${lineNumber} - ignoring 'undefined' line.`);
-                    continue;
-                }
-
-                let task;
-                try {
-                    task = Task.fromLine({
-                        line,
-                        taskLocation: new TaskLocation(
-                            file.path,
-                            lineNumber,
-                            currentSection.position.start.line,
-                            sectionIndex,
-                            Cache.getPrecedingHeader(lineNumber, fileCache.headings),
-                        ),
-                        fallbackDate: dateFromFileName.value,
-                    });
-                } catch (e) {
-                    this.reportTaskParsingErrorToUser(e, file, listItem, line);
-                    continue;
-                }
-
-                if (task !== null) {
-                    sectionIndex++;
-                    tasks.push(task);
-                }
-            }
-        }
-
-        return tasks;
+        const fileParser = new FileParser(filePath, fileContent, listItems, logger, fileCache, errorReporter);
+        return fileParser.parseFileContent();
     }
 
-    private reportTaskParsingErrorToUser(e: any, file: TFile, listItem: ListItemCache, line: string) {
+    private reportTaskParsingErrorToUser(e: any, filePath: string, listItem: ListItemCache, line: string) {
         const msg = `There was an error reading one of the tasks in this vault.
 The following task has been ignored, to prevent Tasks queries getting stuck with 'Loading Tasks ...'
 Error: ${e}
-File: ${file.path}
+File: ${filePath}
 Line number: ${listItem.position.start.line}
 Task line: ${line}
 
@@ -385,7 +359,7 @@ session.
         }
     }
 
-    private static getSection(lineNumberTask: number, sections: SectionCache[] | undefined): SectionCache | null {
+    public static getSection(lineNumberTask: number, sections: SectionCache[] | undefined): SectionCache | null {
         if (sections === undefined) {
             return null;
         }
@@ -399,7 +373,7 @@ session.
         return null;
     }
 
-    private static getPrecedingHeader(lineNumberTask: number, headings: HeadingCache[] | undefined): string | null {
+    public static getPrecedingHeader(lineNumberTask: number, headings: HeadingCache[] | undefined): string | null {
         if (headings === undefined) {
             return null;
         }

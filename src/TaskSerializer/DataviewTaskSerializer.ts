@@ -1,7 +1,8 @@
 import { TaskLayoutComponent } from '../Layout/TaskLayoutOptions';
-import { Priority } from '../Task/Priority';
+import { PriorityTools } from '../lib/PriorityTools';
+import type { Priority } from '../Task/Priority';
 import type { Task } from '../Task/Task';
-import { DefaultTaskSerializer } from './DefaultTaskSerializer';
+import { DefaultTaskSerializer, taskIdRegex, taskIdSequenceRegex } from './DefaultTaskSerializer';
 
 /**
  * Takes a regex of the form 'key:: value' and turns it into a regex that can parse
@@ -75,8 +76,9 @@ export const DATAVIEW_SYMBOLS = {
     doneDateSymbol: 'completion::',
     cancelledDateSymbol: 'cancelled::',
     recurrenceSymbol: 'repeat::',
+    onCompletionSymbol: 'onCompletion::',
     idSymbol: 'id::',
-    blockedBySymbol: 'blockedBy::',
+    dependsOnSymbol: 'dependsOn::',
     TaskFormatRegularExpressions: {
         priorityRegex: toInlineFieldRegex(/priority:: *(highest|high|medium|low|lowest)/),
         startDateRegex: toInlineFieldRegex(/start:: *(\d{4}-\d{2}-\d{2})/),
@@ -86,8 +88,9 @@ export const DATAVIEW_SYMBOLS = {
         doneDateRegex: toInlineFieldRegex(/completion:: *(\d{4}-\d{2}-\d{2})/),
         cancelledDateRegex: toInlineFieldRegex(/cancelled:: *(\d{4}-\d{2}-\d{2})/),
         recurrenceRegex: toInlineFieldRegex(/repeat:: *([a-zA-Z0-9, !]+)/),
-        blockedByRegex: toInlineFieldRegex(/blockedBy:: *([a-z0-9]+( *, *[a-z0-9]+ *)*)$/),
-        idRegex: toInlineFieldRegex(/id:: *([a-z0-9]+)/),
+        onCompletionRegex: toInlineFieldRegex(/onCompletion:: *([a-zA-Z]+)/),
+        dependsOnRegex: toInlineFieldRegex(new RegExp('dependsOn:: *(' + taskIdSequenceRegex.source + ')')),
+        idRegex: toInlineFieldRegex(new RegExp('id:: *(' + taskIdRegex.source + ')')),
     },
 } as const;
 
@@ -101,20 +104,7 @@ export class DataviewTaskSerializer extends DefaultTaskSerializer {
     }
 
     protected parsePriority(p: string): Priority {
-        switch (p) {
-            case 'highest':
-                return Priority.Highest;
-            case 'high':
-                return Priority.High;
-            case 'medium':
-                return Priority.Medium;
-            case 'low':
-                return Priority.Low;
-            case 'lowest':
-                return Priority.Lowest;
-            default:
-                return Priority.None;
-        }
+        return PriorityTools.priorityValue(p);
     }
 
     public componentToString(task: Task, shortMode: boolean, component: TaskLayoutComponent) {

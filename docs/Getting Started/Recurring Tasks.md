@@ -19,6 +19,9 @@ See [[#Order of the new task]] below, for how to change this behaviour and make 
 
 The new task will have updated dates based off the original task.
 
+> [!tip]
+> If you only want the latest occurrence, and don't care to see the clutter of all the earlier tasks, check out the new [[On Completion]] facility, added in Tasks 7.8.0.
+
 ### Basic Example
 
 Take as an example the following task:
@@ -43,6 +46,8 @@ Alternatively, if you have enabled addition of [[Dates#Created date|created date
 - [x] take out the trash 🔁 every Sunday 📅 2021-04-25 ✅ 2023-03-10
 ```
 
+## Recurrence Settings
+
 ### Order of the new task
 
 Use this setting to control where the recurring task is inserted. The default is to put the new task before the original one.
@@ -52,7 +57,18 @@ Use this setting to control where the recurring task is inserted. The default is
 > [!released]
 > Control of the location (or order) of the new task was introduced in Tasks 3.8.0
 
-### Recurring Tasks with Custom Statuses
+### Remove scheduled date on recurrence
+
+Use this setting to control whether the Scheduled date should be removed from the next occurrence. The Scheduled date is only removed the task also has a Start or Due date.
+
+This is useful when you want the Start and Due dates to carry forward to the next recurrence, but you will set the Scheduled date in future, once you know when you intend to work on it.
+
+![Setting for Remove scheduled date on recurrence](../images/settings-recurrence-remove-scheduled-date.png)
+
+> [!released]
+> The option to remove the scheduled date on recurrence was introduced in Tasks 7.19.0.
+
+## Recurring Tasks with Custom Statuses
 
 > [!Warning]
 > If you use [[Custom Statuses]], please see [[Recurring Tasks and Custom Statuses]] for important information about how these two facilities interact.
@@ -89,7 +105,7 @@ Because calendar months differ in length, there are some pitfalls in monthly rec
 
 Below are some representative examples to demonstrate the differences in behavior, to help you choose which approach to use.
 
-Note that there are several more month-based options in the [Examples](#examples) section below.
+Note that there are several more month-based options in the [[#Examples]] section below.
 
 ### every month on the last: reliable and safe
 
@@ -232,7 +248,7 @@ Since Tasks 5.0.0, this is enforced by the [[Create or edit Task]] modal:
 
 ![The 'Create or edit Task', with error message saying a date must be set on a recurring task.](../images/modal-showing-date-needed-on-recurring-task.png)
 
-*Above: The 'Create or edit Task', with an error message saying a date must be set on a recurring task.*
+_Above: The 'Create or edit Task', with an error message saying a date must be set on a recurring task._
 
 > [!info] Detail
 > Technically, you _can_ add a recurrence rule to a task without any dates, and there is nothing stopping anyone editing a task like to give it a recurrence rule but no date.
@@ -248,6 +264,39 @@ Since Tasks 5.0.0, this is enforced by the [[Create or edit Task]] modal:
 > ```
 >
 > These tasks are not searchable by the usual Due, Schedule, Starts or Happens date searches: we believe the majority of Tasks users find their tasks by searching for dates.
+
+### Tasks in Daily Notes should not be recurring
+
+> [!Important]
+> Do not use `recurring` on tasks in daily notes, as it would create repeated copies of the task in _each_ daily note.
+
+This is less a limitation of Tasks and more pattern occasionally asked about by users.
+
+When entering repeating tasks into daily notes, the template will create the tasks for each appropriate date. In such cases, these tasks should not be set as recurring.
+
+Repeating tasks can be managed effectively in the following ways:
+
+- **Either** included in a daily note via a template and set as non-recurring (as each daily note will have its own copy of the task)
+- **Or** placed in a file other than the daily note and set as recurring.
+
+### Next recurrence has any dependency fields removed
+
+Some users have reported what appears at first glance to be a bug, that when a recurring task is completed, the next instance has any [[Task Dependencies#`id`|id]] and [[Task Dependencies#`dependsOn`|dependsOn]] fields removed.
+
+This is intentional, but has confused some users, so we explain the reason here.
+
+#### Recurrence removing `id`
+
+When initially testing the [[Task Dependencies]] facility, we found that tasks that were 'blocked by' a recurring task were blocked forever, due to creating a new task with a duplicate `id` that is not `DONE`.
+
+We quickly realised that in order for the dependencies mechanism to work, and not create duplicate `id` values, we needed to remove both `id` and `dependsOn`.
+
+#### Recurrence removing `dependsOn`
+
+One way to explain the removal of `dependsOn` in next recurrence is this scenario:
+
+> [!Example]
+> Suppose that every Monday you have to go and buy bread. One day you need to go to the bank to get cash first, so you add a dependency, which will naturally apply to just that one week's task.
 
 ### Next recurrence is on non-existent date
 

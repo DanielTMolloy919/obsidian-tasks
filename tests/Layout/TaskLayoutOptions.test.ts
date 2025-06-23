@@ -1,4 +1,4 @@
-import { TaskLayoutComponent, TaskLayoutOptions } from '../../src/Layout/TaskLayoutOptions';
+import { TaskLayoutComponent, TaskLayoutOptions, parseTaskShowHideOptions } from '../../src/Layout/TaskLayoutOptions';
 
 describe('TaskLayoutOptions', () => {
     it('should be constructable', () => {
@@ -8,9 +8,10 @@ describe('TaskLayoutOptions', () => {
         expect(options.shownComponents.join('\n')).toMatchInlineSnapshot(`
             "description
             id
-            blockedBy
+            dependsOn
             priority
             recurrenceRule
+            onCompletion
             createdDate
             startDate
             scheduledDate
@@ -63,9 +64,10 @@ describe('TaskLayoutOptions', () => {
         expect(options.shownComponents.join('\n')).toMatchInlineSnapshot(`
             "description
             id
-            blockedBy
+            dependsOn
             priority
             recurrenceRule
+            onCompletion
             createdDate
             startDate
             scheduledDate
@@ -81,9 +83,10 @@ describe('TaskLayoutOptions', () => {
         expect(options.shownComponents.join('\n')).toMatchInlineSnapshot(`
             "description
             id
-            blockedBy
+            dependsOn
             priority
             recurrenceRule
+            onCompletion
             createdDate
             startDate
             scheduledDate
@@ -135,9 +138,10 @@ describe('TaskLayoutOptions', () => {
 
         expect(options.toggleableComponents.join('\n')).toMatchInlineSnapshot(`
             "id
-            blockedBy
+            dependsOn
             priority
             recurrenceRule
+            onCompletion
             createdDate
             startDate
             scheduledDate
@@ -145,5 +149,41 @@ describe('TaskLayoutOptions', () => {
             cancelledDate
             doneDate"
         `);
+    });
+});
+
+describe('parsing task show/hide layout options', () => {
+    it.each([
+        // NEW_TASK_FIELD_EDIT_REQUIRED
+        // Alphabetical order
+        ['cancelled date', TaskLayoutComponent.CancelledDate],
+        ['created date', TaskLayoutComponent.CreatedDate],
+        ['depends on', TaskLayoutComponent.DependsOn],
+        ['done date', TaskLayoutComponent.DoneDate],
+        ['due date', TaskLayoutComponent.DueDate],
+        ['id', TaskLayoutComponent.Id],
+        ['on completion', TaskLayoutComponent.OnCompletion],
+        ['priority', TaskLayoutComponent.Priority],
+        ['recurrence rule', TaskLayoutComponent.RecurrenceRule],
+        ['scheduled date', TaskLayoutComponent.ScheduledDate],
+        ['start date', TaskLayoutComponent.StartDate],
+    ])('should parse option: %s', (option: string, component: TaskLayoutComponent) => {
+        const options = new TaskLayoutOptions();
+
+        parseTaskShowHideOptions(options, option, false);
+        expect(options.isShown(component)).toEqual(false);
+
+        parseTaskShowHideOptions(options, option, true);
+        expect(options.isShown(component)).toEqual(true);
+    });
+
+    it('should parse tags option', () => {
+        const options = new TaskLayoutOptions();
+
+        parseTaskShowHideOptions(options, 'tags', false);
+        expect(options.areTagsShown()).toEqual(false);
+
+        parseTaskShowHideOptions(options, 'tags', true);
+        expect(options.areTagsShown()).toEqual(true);
     });
 });

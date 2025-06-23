@@ -455,6 +455,9 @@ Find any tasks that have status symbols you have not yet added to your Tasks set
 
 At a high level, task dependencies define the order in which you want to work on a set of tasks. You can read more about them in [[Task Dependencies]].
 
+> [!released]
+> Task Dependencies were introduced in Tasks 6.1.0.
+
 ### Blocking Tasks
 
 - `is blocking`
@@ -466,26 +469,26 @@ At a high level, task dependencies define the order in which you want to work on
 A task is treated as `blocking` if:
 
 - it has an `id` value,
-- at least one other task in the vault has that `id` value in its `blockedBy` list,
+- at least one other task in the vault has that `id` value in its `dependsOn` list,
 - both tasks have status type `TODO` or `IN_PROGRESS`.
 
 For example:
 
 ```text
 - [ ] I am blocking 🆔 12345
-- [ ] I am not blocking ⛔️ 12345
+- [ ] I am not blocking ⛔ 12345
 ```
 
 Note also:
 
 - Only direct dependencies are considered.
-- Tasks with status type `DONE`, `CANCELLED` or `NON_TASK` are never treated as `blocked`.
+- Tasks with status type `DONE`, `CANCELLED` or `NON_TASK` are never treated as `blocking`.
 
 For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - `is blocking` and `is not blocking` were introduced in Tasks X.Y.Z.
+> - `is blocking` and `is not blocking` were introduced in Tasks 6.1.0.
 
 ### Blocked Tasks
 
@@ -497,15 +500,15 @@ For more information, see [[Task Dependencies]].
 
 A task is treated as `blocked` if:
 
-- it has one or more `blockedBy` values,
-- its `blockedBy` list includes the id any tasks in the vault,
+- it has one or more `dependsOn` values,
+- its `dependsOn` list includes the id any tasks in the vault,
 - both tasks have status type `TODO` or `IN_PROGRESS`.
 
 For example:
 
 ```text
 - [ ] I am not blocked 🆔 12345
-- [ ] I am blocked ⛔️ 12345
+- [ ] I am blocked ⛔ 12345
 ```
 
 Note also:
@@ -517,11 +520,11 @@ For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - `is blocked` and `is not blocked` were introduced in Tasks X.Y.Z.
+> - `is blocked` and `is not blocked` were introduced in Tasks 6.1.0.
 
 ### Id
 
-The `id` field adds an identifier to a task, so that other tasks may be marked as `blockedBy` that task.
+The `id` field adds an identifier to a task, so that other tasks may be marked as `dependsOn` that task.
 
 - `has id`
 - `no id`
@@ -535,24 +538,24 @@ For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - Task Id was introduced in Tasks X.Y.Z.
+> - Task Id was introduced in Tasks 6.1.0.
 
-Since Tasks X.Y.Z, **[[Custom Filters|custom filtering]] by Id** is now possible, using `task.id`.
+Since Tasks 6.1.0, **[[Custom Filters|custom filtering]] by Id** is now possible, using `task.id`.
 
-### Blocked By
+### Depends On
 
-The `blockedBy` field allows a task to be marked as depending on the `id` of one or more other tasks. Multiple `id` values are separated by commas (`,`) with no spaces.
+The `dependsOn` field allows a task to be marked as depending on the `id` of one or more other tasks. Multiple `id` values are separated by commas (`,`) with no spaces.
 
-- `has blocked by`
-- `no blocked by`
+- `has depends on`
+- `no depends on`
 
 For more information, see [[Task Dependencies]].
 
 > [!released]
 >
-> - Task Blocked By was introduced in Tasks X.Y.Z.
+> - Task Depends On was introduced in Tasks 6.1.0.
 
-Since Tasks X.Y.Z, **[[Custom Filters|custom filtering]] by Blocked By** is now possible, using `task.blockedBy`.
+Since Tasks 6.1.0, **[[Custom Filters|custom filtering]] by Depends On** is now possible, using `task.dependsOn`.
 
 ## Filters for Dates in Tasks
 
@@ -914,9 +917,19 @@ Such tasks look like they have a date, but that date will never be found. When v
 
 Any such mistakes can be found systematically with this search:
 
-    ```tasks
-    (created date is invalid) OR (done date is invalid) OR (due date is invalid) OR (scheduled date is invalid) OR (start date is invalid)
-    ```
+<!-- include: ValidateTasks.test.validate-tasks_find_problem_dates.approved.text -->
+````text
+```tasks
+# These instructions need to be all on one line:
+(cancelled date is invalid) OR (created date is invalid) OR (done date is invalid) OR (due date is invalid) OR (scheduled date is invalid) OR (start date is invalid)
+
+# Optionally, uncomment this line and exclude your templates location
+# path does not include _templates
+
+group by path
+```
+````
+<!-- endInclude -->
 
 > [!warning]
 > If the above search finds any tasks with invalid dates, they are best fixed by clicking on the [[Backlinks|backlink]] to navigate
@@ -1263,6 +1276,19 @@ Since Tasks 4.2.0, **[[Custom Filters|custom filtering]] by original markdown li
 For example, this could be used to extract information from `task.originalMarkdown` that Tasks does not parse, to use for filtering tasks.
 
 <!-- placeholder to force blank line before included text --><!-- include: CustomFilteringExamples.test.other_properties_task.originalMarkdown_docs.approved.md -->
+
+<!-- placeholder to force blank line after included text --><!-- endInclude -->
+
+### Line Number
+
+There is no built-in instruction to filter by the task's line number.
+
+Since Tasks 7.16.0, **[[Custom Filters|custom filtering]] by the task's line number** is now possible, using `task.lineNumber`.
+
+> [!tip]
+> With `task.lineNumber`, the first line in the file is on line number `0` (zero), not `1` (one).
+
+<!-- placeholder to force blank line before included text --><!-- include: CustomFilteringExamples.test.other_properties_task.lineNumber_docs.approved.md -->
 
 <!-- placeholder to force blank line after included text --><!-- endInclude -->
 

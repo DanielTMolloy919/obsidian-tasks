@@ -3,19 +3,21 @@ import { getSettings, getUserSelectedTaskFormat } from '../Config/Settings';
 import { GlobalFilter } from '../Config/GlobalFilter';
 import { StatusRegistry } from '../Statuses/StatusRegistry';
 import type { Status } from '../Statuses/Status';
-import { compareByDate } from '../lib/DateTools';
-import { TasksDate } from '../Scripting/TasksDate';
+import { compareByDate } from '../DateTime/DateTools';
+import { TasksDate } from '../DateTime/TasksDate';
 import { StatusType } from '../Statuses/StatusConfiguration';
-import { TasksFile } from '../Scripting/TasksFile';
 import { PriorityTools } from '../lib/PriorityTools';
 import { logging } from '../lib/logging';
 import { logEndOfTaskEdit, logStartOfTaskEdit } from '../lib/LogTasksHelper';
-import { DateFallback } from './DateFallback';
+import { DateFallback } from '../DateTime/DateFallback';
+import { ListItem } from './ListItem';
+import type { Occurrence } from './Occurrence';
 import { Urgency } from './Urgency';
 import type { Recurrence } from './Recurrence';
 import type { TaskLocation } from './TaskLocation';
 import type { Priority } from './Priority';
 import { TaskRegularExpressions } from './TaskRegularExpressions';
+import { OnCompletion, handleOnCompletion } from './OnCompletion';
 
 /**
  * Storage for the task line, broken down in to sections.
@@ -34,17 +36,11 @@ interface TaskComponents {
  * the extensions provided by this plugin. This is used to parse and
  * generate the markdown task for all updates and replacements.
  *
- * @export
  * @class Task
  */
-export class Task {
+export class Task extends ListItem {
     // NEW_TASK_FIELD_EDIT_REQUIRED
     public readonly status: Status;
-    public readonly description: string;
-    public readonly indentation: string;
-    public readonly listMarker: string;
-
-    public readonly taskLocation: TaskLocation;
 
     public readonly tags: string[];
 
@@ -58,19 +54,14 @@ export class Task {
     public readonly cancelledDate: Moment | null;
 
     public readonly recurrence: Recurrence | null;
+    public readonly onCompletion: OnCompletion;
 
-    public readonly blockedBy: string[];
+    public readonly dependsOn: string[];
     public readonly id: string;
 
     /** The blockLink is a "^" annotation after the dates/recurrence rules.
      * Any non-empty value must begin with ' ^'. */
     public readonly blockLink: string;
-
-    /** The original line read from file.
-     *
-     * Will be empty if Task was created programmatically
-     * (for example, by Create or Edit Task, or in tests, including via {@link TaskBuilder}). */
-    public readonly originalMarkdown: string;
 
     public readonly scheduledDateIsInferred: boolean;
 
@@ -91,12 +82,14 @@ export class Task {
         doneDate,
         cancelledDate,
         recurrence,
-        blockedBy,
+        onCompletion,
+        dependsOn,
         id,
         blockLink,
         tags,
         originalMarkdown,
         scheduledDateIsInferred,
+        parent = null,
     }: {
         // NEW_TASK_FIELD_EDIT_REQUIRED
         status: Status;
@@ -112,19 +105,26 @@ export class Task {
         doneDate: moment.Moment | null;
         cancelledDate: moment.Moment | null;
         recurrence: Recurrence | null;
-        blockedBy: string[] | [];
+        onCompletion: OnCompletion;
+        dependsOn: string[] | [];
         id: string;
         blockLink: string;
         tags: string[] | [];
         originalMarkdown: string;
         scheduledDateIsInferred: boolean;
+        parent?: ListItem | null;
     }) {
+        super({
+            originalMarkdown,
+            indentation,
+            listMarker,
+            statusCharacter: status.symbol,
+            description,
+            taskLocation,
+            parent,
+        });
         // NEW_TASK_FIELD_EDIT_REQUIRED
         this.status = status;
-        this.description = description;
-        this.indentation = indentation;
-        this.listMarker = listMarker;
-        this.taskLocation = taskLocation;
 
         this.tags = tags;
 
@@ -138,12 +138,12 @@ export class Task {
         this.cancelledDate = cancelledDate;
 
         this.recurrence = recurrence;
+        this.onCompletion = onCompletion;
 
-        this.blockedBy = blockedBy;
+        this.dependsOn = dependsOn;
         this.id = id;
 
         this.blockLink = blockLink;
-        this.originalMarkdown = originalMarkdown;
 
         this.scheduledDateIsInferred = scheduledDateIsInferred;
     }
@@ -152,13 +152,18 @@ export class Task {
      * Takes the given line from an Obsidian note and returns a Task object.
      * Will check if Global Filter is present in the line.
      *
+     * If you want to specify a parent ListItem or Task after a fromLine call,
+     * you have to do the following:
+     * @example
+     *  const finalTask = new Task({ ...firstReadTask!, parent: parentListItem });
+     *
      * @static
      * @param {string} line - The full line in the note to parse.
      * @param {TaskLocation} taskLocation - The location of the task line
      * @param {(Moment | null)} fallbackDate - The date to use as the scheduled date if no other date is set
      * @return {*}  {(Task | null)}
-     * @memberof Task
      * @see parseTaskSignifiers
+     * @see ListItem.fromListItemLine
      */
     public static fromLine({
         line,
@@ -272,7 +277,6 @@ export class Task {
      *
      * @note Output depends on {@link Settings.taskFormat}
      * @return {*}  {string}
-     * @memberof Task
      */
     public toString(): string {
         return getUserSelectedTaskFormat().taskSerializer.serialize(this);
@@ -283,7 +287,6 @@ export class Task {
      *
      * @note Output depends on {@link Settings.taskFormat}
      * @return {*}  {string}
-     * @memberof Task
      */
     public toFileLineString(): string {
         return `${this.indentation}${this.listMarker} [${this.status.symbol}] ${this.toString()}`;
@@ -317,50 +320,46 @@ export class Task {
         return newTasks;
     }
 
-    public handleNewStatus(newStatus: Status): Task[] {
+    /**
+     * Edits the {@link status} of this task and returns the resulting task(s).
+     *
+     * Use this method if you need to know which is the original (edited)
+     * task and which is the new recurrence, if any.
+     *
+     * If the task is not recurring, it will return `[edited]`,
+     * or `[this]` if the status is unchanged.
+     *
+     * Editing the status can result in more than one returned task in the case of
+     * recurrence. In this case, the edited task will be returned
+     * together with the next occurrence in the order `[next, edited]`.
+     *
+     * There is a possibility to use user set order `[next, edited]`
+     * or `[toggled, next]` - {@link handleNewStatusWithRecurrenceInUsersOrder}.
+     *
+     * @param newStatus
+     * @param today - Optional date representing the completion date. This defaults to today.
+     *                It is used for any new done date, and for the calculation of new
+     *                dates on recurring tasks that are marked as 'when done'.
+     *                However, any created date on a new recurrence is, for now, calculated from the
+     *                actual current date, rather than this parameter.
+     */
+    public handleNewStatus(newStatus: Status, today = window.moment()): Task[] {
         if (newStatus.identicalTo(this.status)) {
             // There is no need to create a new Task object if the new status behaviour is identical to the current one.
             return [this];
         }
 
-        let newDoneDate = null;
-        if (newStatus.isCompleted()) {
-            if (!this.status.isCompleted()) {
-                // Set done date only if setting value is true
-                const { setDoneDate } = getSettings();
-                if (setDoneDate) {
-                    newDoneDate = window.moment();
-                }
-            } else {
-                // This task was already completed, so preserve its done date.
-                newDoneDate = this.doneDate;
-            }
-        }
+        const { setDoneDate } = getSettings();
+        const newDoneDate = this.newDate(newStatus, StatusType.DONE, this.doneDate, setDoneDate, today);
 
-        let newCancelledDate = null;
-        if (newStatus.isCancelled()) {
-            if (!this.status.isCancelled()) {
-                // Set done cancelled only if setting value is true
-                const { setCancelledDate } = getSettings();
-                if (setCancelledDate) {
-                    newCancelledDate = window.moment();
-                }
-            } else {
-                // This task was already cancelled, so preserve its cancelled date.
-                newCancelledDate = this.cancelledDate;
-            }
-        }
-
-        let nextOccurrence: {
-            startDate: Moment | null;
-            scheduledDate: Moment | null;
-            dueDate: Moment | null;
-        } | null = null;
-        if (newStatus.isCompleted()) {
-            if (!this.status.isCompleted() && this.recurrence !== null) {
-                nextOccurrence = this.recurrence.next();
-            }
-        }
+        const { setCancelledDate } = getSettings();
+        const newCancelledDate = this.newDate(
+            newStatus,
+            StatusType.CANCELLED,
+            this.cancelledDate,
+            setCancelledDate,
+            today,
+        );
 
         const toggledTask = new Task({
             ...this,
@@ -369,36 +368,86 @@ export class Task {
             cancelledDate: newCancelledDate,
         });
 
-        const newTasks: Task[] = [];
+        const newStatusIsNotDone = !newStatus.isCompleted();
+        const oldStatusWasDone = this.status.isCompleted();
+        const noRecurrenceRule = this.recurrence === null;
 
-        if (nextOccurrence !== null) {
-            const { setCreatedDate } = getSettings();
-            let createdDate: moment.Moment | null = null;
-            if (setCreatedDate) {
-                createdDate = window.moment();
-            }
-            // In case the task being toggled was previously cancelled, ensure the new task has no cancelled date:
-            const cancelledDate = null;
-            const statusRegistry = StatusRegistry.getInstance();
-            const nextStatus = statusRegistry.getNextRecurrenceStatusOrCreate(newStatus);
-            const nextTask = new Task({
-                ...this,
-                ...nextOccurrence,
-                status: nextStatus,
-                // New occurrences cannot have the same block link.
-                // And random block links don't help.
-                blockLink: '',
-                // add new createdDate on recurring tasks
-                createdDate,
-                cancelledDate,
-            });
-            newTasks.push(nextTask);
+        const noNewRecurrence = newStatusIsNotDone || oldStatusWasDone || noRecurrenceRule;
+        if (noNewRecurrence) {
+            return [toggledTask];
         }
 
-        // Write next occurrence before previous occurrence.
-        newTasks.push(toggledTask);
+        const { removeScheduledDateOnRecurrence } = getSettings();
+        const nextOccurrence = this.recurrence.next(today, removeScheduledDateOnRecurrence);
+        if (nextOccurrence === null) {
+            return [toggledTask];
+        }
 
-        return newTasks;
+        const nextTask = this.createNextOccurrence(newStatus, nextOccurrence);
+        // Write next occurrence before previous occurrence.
+        return [nextTask, toggledTask];
+    }
+
+    /**
+     * Returns the new value to use for a date that tracks progress on tasks upon transition to a different
+     * {@link StatusType}.
+     *
+     * Currently, this is used to calculate the new Done Date or Cancelled Date,
+     */
+    private newDate(
+        newStatus: Status,
+        statusType: StatusType,
+        oldDate: moment.Moment | null,
+        dateEnabledInSettings: boolean,
+        today: moment.Moment,
+    ) {
+        let newDate = null;
+        if (newStatus.type === statusType) {
+            if (this.status.type !== statusType) {
+                // Set date only if setting value is true.
+                if (dateEnabledInSettings) {
+                    newDate = today;
+                }
+            } else {
+                // This task was already in statusType, so preserve its existing date.
+                newDate = oldDate;
+            }
+        }
+        return newDate;
+    }
+
+    private createNextOccurrence(newStatus: Status, nextOccurrence: Occurrence) {
+        const { setCreatedDate } = getSettings();
+        let createdDate: moment.Moment | null = null;
+        if (setCreatedDate) {
+            createdDate = window.moment();
+        }
+        // In case the task being toggled was previously cancelled, ensure the new task has no cancelled date:
+        const cancelledDate = null;
+
+        // Also set the new done date to zero, to simplify the
+        // saving of edited tasks in the Edit Task modal:
+        const doneDate = null;
+
+        const statusRegistry = StatusRegistry.getInstance();
+        const nextStatus = statusRegistry.getNextRecurrenceStatusOrCreate(newStatus);
+        return new Task({
+            ...this,
+            ...nextOccurrence,
+            status: nextStatus,
+            // New occurrences cannot have the same block link.
+            // And random block links don't help.
+            blockLink: '',
+
+            // New occurrences also cannot have the same dependency fields. See #2654.
+            id: '',
+            dependsOn: [],
+
+            // add new createdDate on recurring tasks
+            createdDate,
+            cancelledDate,
+            doneDate,
+        });
     }
 
     /**
@@ -423,19 +472,29 @@ export class Task {
         return this.putRecurrenceInUsersOrder(newTasks);
     }
 
-    public handleNewStatusWithRecurrenceInUsersOrder(newStatus: Status): Task[] {
+    public handleNewStatusWithRecurrenceInUsersOrder(newStatus: Status, today = window.moment()): Task[] {
         const logger = logging.getLogger('tasks.Task');
         logger.debug(
             `changed task ${this.taskLocation.path} ${this.taskLocation.lineNumber} ${this.originalMarkdown} status to '${newStatus.symbol}'`,
         );
 
-        const newTasks = this.handleNewStatus(newStatus);
+        const newTasks = this.handleNewStatus(newStatus, today);
         return this.putRecurrenceInUsersOrder(newTasks);
     }
 
     private putRecurrenceInUsersOrder(newTasks: Task[]) {
+        const potentiallyPrunedTasks = handleOnCompletion(this, newTasks);
         const { recurrenceOnNextLine } = getSettings();
-        return recurrenceOnNextLine ? newTasks.reverse() : newTasks;
+        return recurrenceOnNextLine ? potentiallyPrunedTasks.reverse() : potentiallyPrunedTasks;
+    }
+
+    /**
+     * Return whether this object is a {@link Task}.
+     *
+     * This is useful at run-time to discover whether a {@link ListItem} reference is in fact a {@link Task}.
+     */
+    get isTask() {
+        return true;
     }
 
     /**
@@ -458,7 +517,7 @@ export class Task {
      * @param allTasks - all the tasks in the vault. In custom queries, this is available via query.allTasks.
      */
     public isBlocked(allTasks: Readonly<Task[]>) {
-        if (this.blockedBy.length === 0) {
+        if (this.dependsOn.length === 0) {
             return false;
         }
 
@@ -466,7 +525,7 @@ export class Task {
             return false;
         }
 
-        for (const depId of this.blockedBy) {
+        for (const depId of this.dependsOn) {
             const depTask = allTasks.find((task) => task.id === depId && !task.isDone);
             if (!depTask) {
                 // There is no not-done task with this id.
@@ -481,7 +540,7 @@ export class Task {
     }
 
     /**
-     * A Task is blocking if there is any other not-done task blockedBy value with its id.
+     * A Task is blocking if there is any other not-done task dependsOn value with its id.
      *
      * 'Done' tasks (with status DONE, CANCELLED or NON_TASK) are never blocking.
      * Only direct dependencies are considered.
@@ -501,7 +560,7 @@ export class Task {
                 return false;
             }
 
-            return task.blockedBy.includes(this.id);
+            return task.dependsOn.includes(this.id);
         });
     }
 
@@ -558,10 +617,6 @@ export class Task {
         }
 
         return this._urgency;
-    }
-
-    public get path(): string {
-        return this.taskLocation.path;
     }
 
     /**
@@ -670,38 +725,6 @@ export class Task {
         return this.precedingHeader !== null;
     }
 
-    public get file(): TasksFile {
-        return new TasksFile(this.path);
-    }
-
-    /**
-     * Return the name of the file containing the task, with the .md extension removed.
-     */
-    public get filename(): string | null {
-        const fileNameMatch = this.path.match(/([^/]+)\.md$/);
-        if (fileNameMatch !== null) {
-            return fileNameMatch[1];
-        } else {
-            return null;
-        }
-    }
-
-    get lineNumber(): number {
-        return this.taskLocation.lineNumber;
-    }
-
-    get sectionStart(): number {
-        return this.taskLocation.sectionStart;
-    }
-
-    get sectionIndex(): number {
-        return this.taskLocation.sectionIndex;
-    }
-
-    public get precedingHeader(): string | null {
-        return this.taskLocation.precedingHeader;
-    }
-
     /**
      * Returns the text that should be displayed to the user when linking to the origin of the task
      *
@@ -731,26 +754,6 @@ export class Task {
     }
 
     /**
-     * Compare two lists of Task objects, and report whether their
-     * tasks are identical in the same order.
-     *
-     * This can be useful for optimising code if it is guaranteed that
-     * there are no possible differences in the tasks in a file
-     * after an edit, for example.
-     *
-     * If any field is different in any task, it will return false.
-     *
-     * @param oldTasks
-     * @param newTasks
-     */
-    static tasksListsIdentical(oldTasks: Task[], newTasks: Task[]): boolean {
-        if (oldTasks.length !== newTasks.length) {
-            return false;
-        }
-        return oldTasks.every((oldTask, index) => oldTask.identicalTo(newTasks[index]));
-    }
-
-    /**
      * Compare all the fields in another Task, to detect any differences from this one.
      *
      * If any field is different in any way, it will return false.
@@ -762,6 +765,11 @@ export class Task {
      * @param other
      */
     public identicalTo(other: Task) {
+        // First compare child Task and ListItem objects, and any other data in ListItem:
+        if (!super.identicalTo(other)) {
+            return false;
+        }
+
         // NEW_TASK_FIELD_EDIT_REQUIRED
 
         // Based on ideas from koala. AquaCat and javalent in Discord:
@@ -772,19 +780,12 @@ export class Task {
         //       any of the tasks in a file. This does mean that redrawing of tasks blocks
         //       happens more often than is ideal.
         let args: Array<keyof Task> = [
-            'description',
-            'path',
-            'indentation',
-            'listMarker',
-            'lineNumber',
-            'sectionStart',
-            'sectionIndex',
-            'precedingHeader',
             'priority',
             'blockLink',
             'scheduledDateIsInferred',
             'id',
-            'blockedBy',
+            'dependsOn',
+            'onCompletion',
         ];
         for (const el of args) {
             if (this[el]?.toString() !== other[el]?.toString()) return false;
@@ -816,20 +817,31 @@ export class Task {
                 return false;
             }
         }
+        if (!this.recurrenceIdenticalTo(other)) {
+            return false;
+        }
 
+        return this.file.rawFrontmatterIdenticalTo(other.file);
+    }
+
+    private recurrenceIdenticalTo(other: Task) {
         const recurrence1 = this.recurrence;
         const recurrence2 = other.recurrence;
         if (recurrence1 === null && recurrence2 !== null) {
             return false;
-        } else if (recurrence1 !== null && recurrence2 === null) {
-            return false;
-        } else if (recurrence1 && recurrence2 && !recurrence1.identicalTo(recurrence2)) {
+        }
+        if (recurrence1 !== null && recurrence2 === null) {
             return false;
         }
-
+        if (recurrence1 && recurrence2 && !recurrence1.identicalTo(recurrence2)) {
+            return false;
+        }
         return true;
     }
 
+    /**
+     * See also {@link AllTaskDateFields}
+     */
     public static allDateFields(): (keyof Task)[] {
         return [
             'createdDate' as keyof Task,
@@ -861,7 +873,7 @@ export class Task {
  * @param allTasks
  */
 export function isBlocked(thisTask: Task, allTasks: Task[]) {
-    if (thisTask.blockedBy.length === 0) {
+    if (thisTask.dependsOn.length === 0) {
         return false;
     }
 
@@ -869,7 +881,7 @@ export function isBlocked(thisTask: Task, allTasks: Task[]) {
         return false;
     }
 
-    for (const depId of thisTask.blockedBy) {
+    for (const depId of thisTask.dependsOn) {
         const depTask = allTasks.find((task) => task.id === depId && !task.isDone);
         if (!depTask) {
             // There is no not-done task with this id.

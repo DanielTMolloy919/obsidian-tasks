@@ -1,22 +1,24 @@
+import type { TasksFile } from '../Scripting/TasksFile';
+
 /**
  * TaskLocation is the place where all information about a task line's location
  * in a markdown file is stored, so that testable algorithms can then be added here.
  */
 export class TaskLocation {
-    private readonly _path: string;
+    private readonly _tasksFile: TasksFile;
     private readonly _lineNumber: number;
     private readonly _sectionStart: number;
     private readonly _sectionIndex: number;
     private readonly _precedingHeader: string | null;
 
     public constructor(
-        path: string,
+        tasksFile: TasksFile,
         lineNumber: number,
         sectionStart: number,
         sectionIndex: number,
         precedingHeader: string | null,
     ) {
-        this._path = path;
+        this._tasksFile = tasksFile;
         this._lineNumber = lineNumber;
         this._sectionStart = sectionStart;
         this._sectionIndex = sectionIndex;
@@ -25,22 +27,32 @@ export class TaskLocation {
 
     /**
      * Constructor, for use when the Task's exact location in a file is either unknown, or not needed.
-     * @param path
+     * @param tasksFile
      */
-    public static fromUnknownPosition(path: string): TaskLocation {
-        return new TaskLocation(path, 0, 0, 0, null);
+    public static fromUnknownPosition(tasksFile: TasksFile): TaskLocation {
+        return new TaskLocation(tasksFile, 0, 0, 0, null);
     }
 
     /**
      * Constructor, for when the file has been renamed, and all other data remains the same.
-     * @param newPath
+     * @param newTasksFile
      */
-    fromRenamedFile(newPath: string) {
-        return new TaskLocation(newPath, this.lineNumber, this.sectionStart, this.sectionIndex, this.precedingHeader);
+    fromRenamedFile(newTasksFile: TasksFile) {
+        return new TaskLocation(
+            newTasksFile,
+            this.lineNumber,
+            this.sectionStart,
+            this.sectionIndex,
+            this.precedingHeader,
+        );
+    }
+
+    public get tasksFile(): TasksFile {
+        return this._tasksFile;
     }
 
     public get path(): string {
-        return this._path;
+        return this._tasksFile.path;
     }
 
     public get lineNumber(): number {
@@ -59,5 +71,42 @@ export class TaskLocation {
 
     public get precedingHeader(): string | null {
         return this._precedingHeader;
+    }
+
+    /**
+     * Whether the path is known, that-is, non-empty.
+     *
+     * This doesn't check whether the path points to an existing file.
+     *
+     * It was written to allow detection of tasks in Canvas cards, but note
+     * that some editing code in this plugin does not bother to set the location
+     * of the task, if not needed.
+     */
+    public get hasKnownPath(): boolean {
+        return this.path !== '';
+    }
+
+    public allFieldsExceptTasksFileForTesting() {
+        const { _tasksFile, ...rest } = { ...this };
+        return rest;
+    }
+
+    /**
+     * Compare all the fields in another TaskLocation, to detect any differences from this one.
+     *
+     * If any field is different in any way, it will return false.
+     *
+     * @param other
+     */
+    public identicalTo(other: TaskLocation) {
+        const args: Array<keyof TaskLocation> = ['lineNumber', 'sectionStart', 'sectionIndex', 'precedingHeader'];
+
+        for (const el of args) {
+            if (this[el] !== other[el]) return false;
+        }
+
+        // We do this at the end because TasksFile objects are more expensive
+        // to compare, due to their storing potentially complext Properties data.
+        return this._tasksFile.identicalTo(other._tasksFile);
     }
 }
