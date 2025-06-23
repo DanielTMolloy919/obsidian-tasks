@@ -4,4 +4,5 @@ This is a fork of the official [obsidian-tasks](https://github.com/obsidian-task
 
 The work was successfully completed and merged into the main project.
 
-### You can view the final, merged Pull Request here: https://github.com/obsidian-tasks-group/obsidian-tasks/pull/2568
+### You can view the final, merged Pull Request here: 
+https://github.com/obsidian-tasks-group/obsidian-tasks/pull/2568
